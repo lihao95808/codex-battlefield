@@ -1,0 +1,9 @@
+[project]
+name = "calc-fixture"
+version = "0.0.0"
+
+[tool.pytest.ini_options]
+# 让目标目录本身进 `sys.path`，否则测试里的 `from calc.ops import add` 会 ImportError，
+# 而那条报错会被读成"模型改坏了"——实际是考卷环境的问题。
+pythonpath = ["."]
+testpaths = ["tests"]
