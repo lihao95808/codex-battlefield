@@ -1,0 +1,39 @@
+{
+  "id": "add-multiply",
+  "title": "迷你工程里新增一个函数并让它被测试覆盖",
+  "kind": "solvable",
+  "goal": "在 calc 包里新增 multiply(a, b) 函数（返回两数乘积），并补一个能在当前工程里跑过的测试。不要改动 add 的行为。完成后请自己跑一遍测试。",
+  "fixture": "python-pkg-min",
+  "max_agent_starts": 30,
+  "timeout_seconds": 1800,
+  "checks": [
+    {
+      "id": "impl",
+      "type": "contains",
+      "path": "calc/ops.py",
+      "pattern": "def multiply"
+    },
+    {
+      "id": "behavior",
+      "type": "command",
+      "command": [
+        "{python}",
+        "-c",
+        "from calc.ops import multiply; assert multiply(3, 4) == 12"
+      ],
+      "expect_exit": 0
+    },
+    {
+      "id": "suite-green",
+      "type": "command",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "expect_exit": 0
+    }
+  ],
+  "notes": "最小可达任务：用来看「能不能一次做对」与最小成本。"
+}

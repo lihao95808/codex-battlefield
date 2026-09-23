@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["markdown", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "markdown": { "type": "string" },
+    "data": {
+      "type": "object",
+      "required": [
+        "project_name",
+        "quality_tier",
+        "quality_floor",
+        "quality_ceiling",
+        "non_goals",
+        "global_acceptance",
+        "decomposition_rules",
+        "leaf_rules",
+        "parent_acceptance_rules"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "project_name": { "type": "string" },
+        "quality_tier": { "type": "string" },
+        "quality_floor": { "type": "array", "items": { "type": "string" } },
+        "quality_ceiling": { "type": "array", "items": { "type": "string" } },
+        "non_goals": { "type": "array", "items": { "type": "string" } },
+        "global_acceptance": { "type": "array", "items": { "type": "string" } },
+        "decomposition_rules": { "type": "array", "items": { "type": "string" } },
+        "leaf_rules": { "type": "array", "items": { "type": "string" } },
+        "parent_acceptance_rules": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
