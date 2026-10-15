@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StewardChat",
+  "description": "管家（常驻全局 agent）的一轮回复。所有属性都必须列进 required —— OpenAI strict 模式的要求。可选性用可空联合表达，不用『字段可缺省』。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reply", "situation", "proposed_actions", "needs_user_input", "confidence"],
+  "properties": {
+    "reply": {
+      "type": "string",
+      "description": "要对用户说的中文正文。直接、具体、不客套。不要复述这段 schema。"
+    },
+    "situation": {
+      "type": "string",
+      "description": "你判断的当前局势，一句话。没有新信息可写空串，但不要编。"
+    },
+    "proposed_actions": {
+      "type": "array",
+      "description": "建议用户执行的动作。只读模式下你**不能**自己执行，只能建议。每条都要说清为什么。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "target", "why", "risk"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "能力名，取自能力目录里 mutating=true 的那些（例如 kick_root / retry_node / set_budget_guard）。"
+          },
+          "target": {
+            "type": "string",
+            "description": "作用对象（节点 id、root id 等）。没有具体对象时写空串。"
+          },
+          "why": {
+            "type": "string",
+            "description": "为什么建议做这个。要引用你看到的具体证据，不要泛泛而谈。"
+          },
+          "risk": {
+            "type": "string",
+            "description": "这一步的代价或风险（花 token、不可逆等）。没有就写『无明显风险』。"
+          }
+        }
+      }
+    },
+    "needs_user_input": {
+      "type": "boolean",
+      "description": "是否在等用户回答/决定才能继续。你在问他问题、或需要他做选择时置 true。"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "你对本轮判断的把握。状态快照缺关键信息、或你只能猜时，如实选 low。"
+    }
+  }
+}

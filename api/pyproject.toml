@@ -1,0 +1,58 @@
+[project]
+name = "codex-battlefield-api"
+version = "0.1.0"
+description = "Local recursive Codex task tree orchestrator API."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi>=0.115.0,<1",
+  "uvicorn[standard]>=0.30.0,<1",
+  "sqlalchemy>=2.0.0,<3",
+  "pydantic>=2.8.0,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0,<1",
+  "pytest>=8.3.0,<9",
+  "pytest-asyncio>=0.24.0,<1",
+  "pytest-xdist>=3.6.0,<4",
+  "ruff>=0.6.0,<1",
+]
+
+# 显式声明包，**不要**依赖 setuptools 的 flat-layout 自动发现：
+# 那套发现只要在 `api/` 下看到第二个顶层目录（实测：一次把 `TMP` 指到相对路径的测试留下的
+# `api/workspace/pytest-tmp/`）就会直接拒绝构建——`pip install .` 报
+# "Multiple top-level packages discovered: ['app', 'workspace']"，而不是警告。
+# 显式列出还顺带保证 `app/tools/` 真的随包发布（那些工具脚本是要在运行时复制出去的）。
+[tool.setuptools]
+packages = ["app", "app.tools"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# 并行跑：`tests/conftest.py` 按**进程号**给每个 worker 分自己的 SQLite 库，所以 `-n auto` 不会
+# 触发"两次运行共用同一个库"的那类假失败（那说的是两次独立运行，不是同一批 worker）。
+# 实测 764 例：串行 366 秒 → `-n auto` 79 秒。要回串行用 `-n 0`（或 `-p no:xdist`）。
+addopts = "-n auto"
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+
+[tool.ruff.lint]
+# 只选"能抓真错"的规则，不要风格噪音：
+#   F   pyflakes——未定义的名字、未使用的导入/变量、f-string 少占位符、重定义；
+#   E9 语法/运行时级错误（E9xx）；
+#   B   bugbear——可变默认参数、`assert` 被当成校验、`zip` 不等长等真缺陷。
+# 刻意**不**选 E501/I 这类排版规则：它们会把 diff 淹掉，而 reviewer 的注意力是最贵的资源。
+select = ["F", "E9", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 的依赖注入**就是**靠默认参数里的 `Depends(...)`/`Query(...)` 表达（官方推荐写法）。
+# 这两个显式列入白名单，而不是整条 B008 关掉——别处"默认参数里做函数调用"仍然要被拦。
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+# 工具脚本是"被复制出去单独执行"的产物：它们可以有自己的入口与私有命名，不参与本包的风格约定。
+"app/tools/*.py" = ["B"]
+

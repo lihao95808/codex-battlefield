@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 没有这一行，浏览器会自己去要 /favicon.ico → 404 → 一条 console error。
+         A6 的判据是"console error = 0"，所以这条得真修，不能在量具里给 favicon 开后门。
+         用内联 data URI 而不是新增资源文件：dev 与 build 两边都不必多一次请求。 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b1220'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' fill='%2360a5fa' text-anchor='middle'%3EL4%3C/text%3E%3C/svg%3E"
+    />
+    <title>L4 Navigator</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

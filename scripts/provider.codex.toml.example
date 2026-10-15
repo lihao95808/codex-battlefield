@@ -1,0 +1,43 @@
+# 隔离 CODEX_HOME 用的 provider 配置**示例**。
+#
+# 不要手改这个文件后直接使用 —— 它只是模板。真正生效的那份由
+# `scripts/use_provider.ps1` 生成到 `<project_dir>/codex-home/config.toml`：
+#
+#   # 任何 OpenAI 兼容端点
+#   powershell -File scripts\use_provider.ps1 `
+#       -BaseUrl "https://api.openai.com/v1" `
+#       -EnvKey  "OPENAI_API_KEY" `
+#       -Model   "gpt-5-codex"
+#
+#   # 自建网关 / 本地代理（端口按实际改）
+#   powershell -File scripts\use_provider.ps1 `
+#       -BaseUrl "http://127.0.0.1:8080/v1" `
+#       -EnvKey  "MY_GATEWAY_KEY" `
+#       -Model   "my-model"
+#
+# 为什么要有这个隔离文件：每个节点进程都有自己的 CODEX_HOME，于是它们的
+# provider / 模型 / 沙箱档位都只影响本工具，**不碰你自己 `~/.codex/config.toml`**。
+#
+# 下面是等价的 TOML 形状，供对照：
+
+model = "your-model-id"
+model_provider = "custom"
+model_reasoning_effort = "medium"
+model_context_window = 128000
+
+[model_providers.custom]
+name = "Custom OpenAI-compatible provider"
+base_url = "https://api.example.com/v1"
+# "responses"（OpenAI Responses API）或 "chat"（Chat Completions）。
+# 多数第三方网关只支持 "chat" —— 不确定就先试 chat。
+wire_api = "chat"
+# codex 用这个**环境变量名**取 key，并且只要求它**存在**。
+# 本工具的 runner 在该变量缺失时会自动补一个占位值，所以用不校验 key 的
+# 本地代理时不必真的设它。
+env_key = "OPENAI_API_KEY"
+
+# 可选：codex 的 Windows 沙箱档。留空/删掉则用 codex 自己的默认。
+# 有些主机上受限令牌建不起来（报 `CreateProcessAsUserW failed: 5`），
+# 那时需要显式降级：
+# [windows]
+# sandbox = "danger-full-access"

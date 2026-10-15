@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "decision",
+    "reason",
+    "children",
+    "risks",
+    "leaf_certainty",
+    "why_not_leaf",
+    "coverage_ids",
+    "integration_plan",
+    "verification_plan",
+    "block_report"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "decision": { "type": "string", "enum": ["execute", "decompose", "blocked", "repair"] },
+    "reason": { "type": "string" },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/childTask" }
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "leaf_certainty": { "type": "string", "enum": ["300%", "not_sure"] },
+    "why_not_leaf": { "type": "string" },
+    "coverage_ids": { "type": "array", "items": { "type": "string" } },
+    "integration_plan": { "type": "string" },
+    "verification_plan": { "type": "string" },
+    "block_report": {
+      "description": "只在 decision=blocked 时出现的真实数据；其余分支该字段为 null。此处**不使用** $ref：部分网关不接受 anyOf 节点里的 $ref，所以这里内联完整对象。",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["category", "reason", "retryable", "parent_action"],
+          "properties": {
+            "category": { "type": "string", "enum": ["environment", "task_internal", "tool_internal"] },
+            "reason": { "type": "string" },
+            "retryable": { "type": "boolean" },
+            "parent_action": { "type": "string" }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "blockReport": {
+      "type": "object",
+      "required": ["category", "reason", "retryable", "parent_action"],
+      "additionalProperties": false,
+      "properties": {
+        "category": { "type": "string", "enum": ["environment", "task_internal", "tool_internal"] },
+        "reason": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "parent_action": { "type": "string" }
+      }
+    },
+    "childTask": {
+      "type": "object",
+      "required": [
+        "title",
+        "description",
+        "scope",
+        "acceptance",
+        "depends_on",
+        "coverage_ids",
+        "verification_kind",
+        "estimated_leaf"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "scope": { "type": "array", "items": { "type": "string" } },
+        "acceptance": { "type": "array", "items": { "type": "string" } },
+        "depends_on": { "type": "array", "items": { "type": "string" } },
+        "coverage_ids": { "type": "array", "items": { "type": "string" } },
+        "verification_kind": { "type": "string" },
+        "estimated_leaf": { "type": "boolean" }
+      }
+    }
+  }
+}
