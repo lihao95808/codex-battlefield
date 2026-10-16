@@ -68,8 +68,9 @@ JUDGEMENTS: dict[str, str] = {
 GAP_REASONS: dict[str, str] = {
     "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）；**前端首屏未达标**：真浏览器实测 "
     "cold 2.4–4.8s / warm 2.2–3.9s（目标 < 2s；最好的一次 2422ms 也在目标之上）。判据里留了目标值与 6s 棘轮（只防变慢），"
-    "下一步线索：前端一次首屏**取了两次树**、服务端在跑 orchestrator 时同一棵树 0.2–2.3s "
-    "（单元判据 130ms）、渲染成本尚未单独量 —— 见 `docs/scale-baseline.md` §5",
+    "下一步线索：首屏重复取树**已修**（判据拆解 `tree_requests` 2→1）但**没换来速度** ——"
+    "瓶颈是客户端处理 567KB（同一次请求浏览器侧 2178ms vs Node 侧 230ms）、服务端在跑 orchestrator 时"
+    "同一棵树 0.2–2.3s（单元判据 130ms）、渲染成本尚未单独量 —— 见 `docs/scale-baseline.md` §5",
     "P5-2": "长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”**"
     "已实测**未达标**（cold 2.4–4.8s，最好的一次 2422ms），判据 `web/e2e/perf-first-screen.spec.ts` 目前只保证不变慢",
     "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）",

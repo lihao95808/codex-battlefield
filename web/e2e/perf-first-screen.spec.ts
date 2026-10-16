@@ -103,6 +103,9 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
       tree_requests: tree.length,
       tree_ms: Math.round(sum(tree)),
       tree_last_ms: tree.length ? Math.round(tree[tree.length - 1].duration) : null,
+      // URL 必须记下来：只记"两次请求"会让人以为重复，而它们可能是两个不同的端点
+      // （树 + 轮廓）—— 实测差点据此改错地方。
+      tree_urls: tree.map((item) => `${item.name.replace(/^https?:\/\/[^/]+/, '')} ${Math.round(item.duration)}ms`),
       script_requests: scripts.length,
       script_ms: Math.round(sum(scripts)),
     };

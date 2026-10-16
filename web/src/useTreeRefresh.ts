@@ -18,8 +18,14 @@ export function useTreeRefresh({
   onError: (message: string) => void;
 }) {
   useEffect(() => {
-    loadTree().catch((err: unknown) => onError(String(err)));
-
+    // ⚠️ 这里**只拉一次**。原来写了两遍 `loadTree()`（相邻两行、同样的 catch），
+    // 一次首屏因此打两个 `/api/tree` —— 千节点下服务端单次实测 0.2–2.3 秒、荷载 567KB，
+    // 两个请求的 URL 逐字相同（`web/e2e/perf-first-screen.spec.ts` 的拆解
+    // `tree_requests: 2` 就是它）。留一次就够：SSE 会推后续变化，`createPoller` 是兜底。
+    //
+    // 诚实补一句：删掉这一遍**没有让首屏变快**（2422–4810ms → 2985–4289ms，同一量级）。
+    // 真正的瓶颈是客户端处理那份 567KB 荷载：同一次请求浏览器侧量到 2178ms，
+    // 而 Node 侧只要 230ms —— 差在主线程。别把"少一个请求"读成"首屏达标"。
     loadTree().catch((err: unknown) => onError(String(err)));
 
     // 事件流是**主刷新通路**（P5-2）：树有变化时后端推事件，这里 2 秒后拉一次。

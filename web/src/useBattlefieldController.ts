@@ -56,6 +56,15 @@ export function useBattlefieldController() {
     setConstitutionDataText(record ? JSON.stringify(record.data, null, 2) : '');
   }, []);
 
+  // `selectedId` 用 ref 读，**不进 `loadTree` 的依赖数组**：它每次加载都会被
+  // `setSelectedId` 改一次，而 `loadTree` 的标识一变，`useTreeRefresh` 里那个
+  // "挂载时拉一次"的 effect 就会**再拉一次** —— 实测千节点首屏因此打了两个
+  // 完全相同的 `/api/tree`（1264ms + 519ms，URL 逐字相同）。
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
   const loadTree = useCallback(async (overrideRootId = rootId) => {
     if (treeLoadInFlight.current) {
       return;
@@ -77,14 +86,17 @@ export function useBattlefieldController() {
       }
       // 跨树债务索引与当前看的是哪棵树无关（它是全库缓存），所以不跟 rootId 走。
       fetchObligationIndex().then(setObligationIndex).catch(() => setObligationIndex(null));
-      const selectedStillExists = selectedId ? next.tasks.some((task) => task.id === selectedId) : false;
+      const currentSelectedId = selectedIdRef.current;
+      const selectedStillExists = currentSelectedId
+        ? next.tasks.some((task) => task.id === currentSelectedId)
+        : false;
       if (!selectedStillExists) {
         setSelectedId(next.tasks[0]?.id ?? null);
       }
     } finally {
       treeLoadInFlight.current = false;
     }
-  }, [compactDoneArchive, expandedDoneArchiveParentIds, rootId, selectedId]);
+  }, [compactDoneArchive, expandedDoneArchiveParentIds, rootId]);
 
   useTreeRefresh({ loadTree, onError: setError });
 
