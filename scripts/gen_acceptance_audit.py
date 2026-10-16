@@ -112,19 +112,22 @@ def render() -> str:
 
     public_tip = git("rev-parse", "origin/main") or "（取不到）"
     internal_tip = git("rev-parse", "internal/main") or "（取不到）"
-    head = git("rev-parse", "--short", "HEAD") or "（取不到）"
 
     lines = [
         "# 整体验收审计（P2–P6）",
         "",
         "这份文件回答一个问题：**目标里那些交付物，哪些真的有可反驳的判据，哪些还缺条件。**",
         "",
-        "它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q5 会检查",
-        "（每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件）。",
-        "**文档与代码脱节时会红**，这是这份文件存在的意义。",
+        "它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q6 会检查",
+        "（每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、",
+        "**本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。",
         "",
-        f"审计时的提交：公开仓 `{public_tip}`；内部仓 `{internal_tip}`；本地 HEAD `{head}`。",
+        f"审计时的两个远端 tip：公开仓 `{public_tip}`、内部仓 `{internal_tip}`。",
         "（本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）",
+        "",
+        "> **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，",
+        "> 而把这个文件提交进去又会让 HEAD 变化，于是 `--check` 永远不过（实测踩到）。",
+        "> 两个远端 tip 是“已经推上去的事实”，不会因为一次本地提交而失效。",
         "",
         "## 1. 逐条对照",
         "",
