@@ -55,6 +55,36 @@ import {
   updateConstitution,
 } from './api';
 import { layoutBattlefield } from './layout';
+import {
+  DEFAULT_GOAL,
+  autoConcurrencyLabel,
+  blockParentActionLabel,
+  blockRetryableLabel,
+  eventSeverity,
+  eventTypeLabel,
+  guardianCheckLabels,
+  guardianRiskLabels,
+  guardianStatusLabels,
+  runKindLabel,
+  runStatusLabel,
+  statusLabel,
+  statusLabels,
+  watchdogActionLabel,
+} from './labels';
+import {
+  displaySlotCount,
+  formatCostSummary,
+  formatDateTime,
+  formatDuration,
+  formatEventClock,
+  formatPercent,
+  formatUsageSummary,
+  secondsUntil,
+  statNumber,
+  statText,
+  summarizeWatchdogAction,
+} from './format';
+import { createPoller } from './polling';
 import { ProjectOnboarding } from './ProjectOnboarding';
 import { CostPanel } from './CostPanel';
 import { PolicyPanel } from './PolicyPanel';
@@ -95,264 +125,32 @@ import type {
   TaskStatus,
   TreeResponse,
   TreeUsage,
-  WatchdogActionResponse,
   StateLayoutResponse,
   WatchdogStateResponse,
 } from './types';
 
 type TreeStats = TreeResponse['stats'];
 
-function statNumber(stats: TreeStats | null | undefined, key: string, fallback = 0): number {
-  const value = stats?.[key];
-  return typeof value === 'number' ? value : fallback;
-}
 
-function statText(stats: TreeStats | null | undefined, key: string, fallback = '默认'): string {
-  const value = stats?.[key];
-  return typeof value === 'string' ? value : fallback;
-}
 
-function displaySlotCount(activeSlots: number, capacity: number): number {
-  const safeActive = Math.max(0, activeSlots);
-  const safeCapacity = Math.max(0, capacity);
-  return safeCapacity > 0 ? Math.min(safeActive, safeCapacity) : safeActive;
-}
 
-function autoConcurrencyLabel(mode: string): string {
-  return (
-    {
-      high_throughput: '高峰',
-      balanced: '均衡',
-      low_power: '低功率',
-      hibernate_low_power: '休眠',
-      resource_cooldown: '冷却',
-      budget_preserve: '保留',
-      fixed_single_agent: '固定并发',
-      fixed_capacity: '固定并发',
-      manual: '手动',
-      pending: '待评估',
-    }[mode] ?? mode
-  );
-}
 
-const watchdogActionLabels: Record<string, string> = {
-  budget_guard_sleep: '预算守卫',
-  resume: '到点恢复',
-  resume_orphaned: '复活调度',
-  observe_running: '运行观察',
-  wait_for_resume_at: '等待自启',
-  observe: '持续观察',
-  idle: '空闲',
-};
 
-const guardianStatusLabels: Record<string, string> = {
-  watching: '监护中',
-  low_power: '低功耗',
-  sleeping: '休眠守护',
-  recovery_ready: '恢复就绪',
-  ready: '可继续',
-  needs_attention: '需要关注',
-  idle: '空闲',
-  unknown: '等待状态',
-};
 
-const guardianRiskLabels: Record<string, string> = {
-  ok: '正常',
-  watch: '观察',
-  warning: '预警',
-  sleeping: '休眠',
-  critical: '高风险',
-};
 
-const guardianCheckLabels: Record<string, string> = {
-  ok: '正常',
-  warning: '预警',
-  critical: '高风险',
-  sleeping: '休眠',
-  idle: '空闲',
-};
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '未排程';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-}
 
-function secondsUntil(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / 1000));
-}
 
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined) return '未排程';
-  const safeSeconds = Math.max(0, seconds);
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`;
-  return `${minutes} 分钟`;
-}
 
-function formatPercent(value: number | null | undefined): string {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a';
-  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
-}
 
-function summarizeWatchdogAction(result: WatchdogActionResponse): string {
-  const text = [result.stdout, result.stderr].join('\n').trim();
-  const lastLine = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(-1)[0];
-  const label = result.status === 'succeeded' ? '成功' : '失败';
-  const code = result.exit_code === null ? '无退出码' : `退出码 ${result.exit_code}`;
-  return `${label}，${code}${lastLine ? `：${lastLine}` : ''}`;
-}
 
-function blockParentActionLabel(value: unknown): string {
-  switch (String(value ?? 'manual_review')) {
-    case 'wait_and_retry':
-      return '等待池子恢复后重试';
-    case 'recursive_recovery':
-      return '转为递归修复';
-    case 'recursive_recovery_static_wrapper':
-      return '递归修复：改用静态 wrapper/替代验证';
-    case 'skill_lookup_recovery':
-      return '先用 Skill/KM 自救';
-    case 'human_auth_required':
-      return '人工授权/登录';
-    case 'human_visual_review':
-      return '人工视觉/审美验收';
-    case 'pause_tool_fix':
-      return '暂停：等待工具自身修复';
-    case 'manual_review':
-      return '人工判断';
-    default:
-      return String(value);
-  }
-}
 
-function blockRetryableLabel(value: unknown, parentAction: unknown): string {
-  if (value) return '是，等待后可重试';
-  const action = String(parentAction ?? '');
-  if (action === 'pause_tool_fix') return '否，工具修复后自动恢复';
-  if (action === 'skill_lookup_recovery') return '否，先尝试 Skill/KM 自救';
-  if (action === 'human_auth_required') return '否，需要人工登录或授权';
-  if (action === 'human_visual_review') return '否，需要人工视觉判断';
-  if (action === 'recursive_recovery' || action === 'recursive_recovery_static_wrapper') return '否，交给递归修复';
-  return '否，需要人工审查';
-}
 
-const DEFAULT_GOAL =
-  '通过递归拆解未知深度的开发任务，制作一个可玩的小游戏原型；每个叶子任务都必须执行并通过验收。';
 
-const statusLabels: Record<TaskStatus, string> = {
-  planned: '已规划',
-  planning: '规划中',
-  decomposing: '拆解中',
-  queued: '排队中',
-  waiting_children: '等待子任务',
-  running: '执行中',
-  working: '执行中',
-  verifying: '验收中',
-  accepting: '整合验收',
-  done: '已完成',
-  repair: '待修复',
-  blocked: '已阻塞',
-  failed: '失败',
-  paused: '已暂停',
-  hibernating: '休眠中',
-  canceled: '已取消',
-};
 
-const runKindLabels: Record<string, string> = {
-  constitution: '项目宪法',
-  planner: '规划',
-  worker: '执行',
-  verifier: '验收',
-  acceptance: '父节点验收',
-};
 
-const runStatusLabels: Record<string, string> = {
-  queued: '排队中',
-  running: '执行中',
-  succeeded: '成功',
-  failed: '失败',
-};
 
-const eventTypeLabels: Record<string, string> = {
-  'project.started': '项目启动',
-  'constitution.run': '宪法运行',
-  'constitution.drafted': '宪法草案',
-  'constitution.updated': '宪法更新',
-  'constitution.locked': '宪法锁定',
-  'planner.decision': '规划决策',
-  'planner.corrected': '规划修正',
-  'planner.repair_converted': '规划修复转递归',
-  'planner.blocked_converted': '规划阻塞转递归',
-  'acceptance.blocked_converted': '整合阻塞转递归',
-  'task.created': '子任务创建',
-  'task.retry': '重新排队',
-  'task.planned': '已规划',
-  'task.decomposing': '拆解中',
-  'task.planning': '规划中',
-  'task.queued': '排队中',
-  'task.waiting_children': '等待子任务',
-  'task.running': '执行中',
-  'task.working': '执行中',
-  'task.verifying': '验收中',
-  'task.accepting': '整合验收',
-  'task.done': '已完成',
-  'task.leaf_misclassified': '叶子转父',
-  'task.repeated_split_converted': '重复拆分破环',
-  'parent.integration': '父节点整合',
-  'task.repair': '待修复',
-  'task.blocked': '已阻塞',
-  'child.blocked_report': '子节点阻塞上报',
-  'parent.child_block_reports': '父节点收到阻塞',
-  'parent.retry_blocked_children': '父节点重试子节点',
-  'task.failed': '失败',
-  'task.paused': '已暂停',
-  'task.hibernating': '休眠中',
-  'task.hibernate_resume': '休眠恢复',
-  'tree.hibernate': '任务树休眠',
-  'tree.hibernate_resume': '任务树恢复',
-  'task.canceled': '已取消',
-  'worktree.created': '工作树创建',
-  'worktree.fallback': '工作树降级',
-};
 
-function eventSeverity(type: string): 'danger' | 'warn' | 'ok' | 'info' {
-  if (type.includes('failed') || type.includes('blocked')) {
-    return 'danger';
-  }
-  if (
-    type.includes('hibernate') ||
-    type.includes('misclassified') ||
-    type.includes('repair') ||
-    type.includes('canceled')
-  ) {
-    return 'warn';
-  }
-  if (type.endsWith('.done') || type.includes('resume') || type.includes('locked')) {
-    return 'ok';
-  }
-  return 'info';
-}
-
-function formatEventClock(createdAt: string): string {
-  const date = new Date(createdAt);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-  return date.toLocaleTimeString('zh-CN', { hour12: false });
-}
 
 const edgeStateStyles: Record<TaskStatus, { className: string; color: string; animated: boolean }> = {
   planned: { className: 'planned', color: '#778695', animated: false },
@@ -529,7 +327,9 @@ export function App() {
 
   useEffect(() => {
     loadTree().catch((err: unknown) => setError(String(err)));
-    const interval = window.setInterval(() => loadTree().catch(() => undefined), 10000);
+
+    // 事件流是**主刷新通路**（P5-2）：树有变化时后端推事件，这里 2 秒后拉一次。
+    // 保留这个防抖是因为一次状态转换往往连着好几条事件，逐条拉会打成一片。
     const source = new EventSource('/api/events');
     let eventRefreshTimer: number | null = null;
     source.onmessage = () => {
@@ -541,8 +341,24 @@ export function App() {
         loadTree().catch(() => undefined);
       }, 2000);
     };
+
+    // 轮询是**兜底**，不是主力：SSE 静默断开时（代理掐连接、网络抖动）没有它
+    // 界面会一直显示旧数据而没人知道。所以留着，但把间隔从 10 秒放到 60 秒 ——
+    // 而那 10 秒一次的开销才是真的浪费（`/api/tree` 在千节点下要 130ms）。
+    //
+    // 并且**页面不可见时完全不拉**（`createPoller`）：原来整晚开着没人看的标签页
+    // 仍然每 10 秒打一次 API。切回可见时立刻拉一次，所以看不到旧数据。
+    const poller = createPoller({
+      tick: () => loadTree().catch(() => undefined),
+      intervalMs: 60000,
+    });
+    const detachVisibility = poller.attachVisibility(
+      typeof document === 'undefined' ? {} : document,
+    );
+
     return () => {
-      window.clearInterval(interval);
+      detachVisibility();
+      poller.stop();
       if (eventRefreshTimer !== null) {
         window.clearTimeout(eventRefreshTimer);
       }
@@ -1483,33 +1299,8 @@ export function App() {
   );
 }
 
-function formatTokenCount(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  return String(value);
-}
 
-function formatUsageSummary(usage: TreeUsage | null | undefined): string | null {
-  if (!usage) return null;
-  const input = usage.input_tokens ?? 0;
-  const output = usage.output_tokens ?? 0;
-  const cached = usage.cached_input_tokens ?? 0;
-  if (!input && !output && !(usage.total_tokens ?? 0)) return null;
-  const parts = [`入 ${formatTokenCount(input)}`, `出 ${formatTokenCount(output)}`];
-  if (input > 0 && cached > 0) parts.push(`缓存 ${Math.round((cached / input) * 100)}%`);
-  if (usage.runs) parts.push(`${usage.runs} 次调用`);
-  return `用量 ${parts.join(' · ')}`;
-}
 
-function formatCostSummary(usage: TreeUsage | null | undefined): string | null {
-  const buckets = usage?.cost_by_currency;
-  if (!buckets) return null;
-  const entries = Object.entries(buckets).filter(([, amount]) => typeof amount === 'number' && amount > 0);
-  if (!entries.length) return null;
-  const symbols: Record<string, string> = { CNY: '¥', USD: '$' };
-  // 不同币种分别显示，不相加——与后端 summarize_usages 的口径一致。
-  return entries.map(([code, amount]) => `${symbols[code] ?? `${code} `}${amount.toFixed(4)}`).join(' / ');
-}
 
 function EventTicker({ events }: { events: BattlefieldEvent[] }) {
   if (!events.length) {
@@ -1528,7 +1319,7 @@ function EventTicker({ events }: { events: BattlefieldEvent[] }) {
         {recent.map((event) => (
           <li key={event.id} className={eventSeverity(event.type)} title={`${event.type}\n${event.message}`}>
             <span className="event-ticker-time">{formatEventClock(event.created_at)}</span>
-            <span className="event-ticker-label">{eventTypeLabels[event.type] ?? event.type}</span>
+            <span className="event-ticker-label">{eventTypeLabel(event.type) ?? event.type}</span>
             <span className="event-ticker-message">{event.message}</span>
           </li>
         ))}
@@ -1801,7 +1592,7 @@ function TaskNodeView(props: NodeProps) {
             </button>
           )}
         </div>
-        <span className={`status ${task.status}`}>{statusLabels[task.status]}</span>
+        <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
       </div>
       <strong>{task.title}</strong>
       <div className="node-badges" aria-label="节点递归标记">
@@ -1921,7 +1712,7 @@ function DetailPanel({
   return (
     <div className="detail">
       <div className="detail-head">
-        <span className={`status ${task.status}`}>{statusLabels[task.status]}</span>
+        <span className={`status ${task.status}`}>{statusLabel(task.status)}</span>
         {task.is_active_frontier && <span className="frontier-pill">当前前线</span>}
       </div>
       <h2>{task.title}</h2>
@@ -1983,7 +1774,7 @@ function DetailPanel({
               <strong>当前真正运行的叶子</strong>
               {reportActiveLeaves.map((leaf) => (
                 <span key={String(leaf.id)}>
-                  {String(leaf.title ?? leaf.id)} · {statusLabels[String(leaf.status) as TaskStatus] ?? String(leaf.status ?? '')}
+                  {String(leaf.title ?? leaf.id)} · {statusLabel(String(leaf.status)) ?? String(leaf.status ?? '')}
                 </span>
               ))}
             </div>
@@ -1993,7 +1784,7 @@ function DetailPanel({
               <strong>需要父层处理的节点</strong>
               {reportBlockedNodes.map((node) => (
                 <span key={String(node.id)}>
-                  {String(node.title ?? node.id)} · {String(node.reason ?? statusLabels[String(node.status) as TaskStatus] ?? '')}
+                  {String(node.title ?? node.id)} · {String(node.reason ?? statusLabel(String(node.status)) ?? '')}
                 </span>
               ))}
             </div>
@@ -2067,8 +1858,8 @@ function DetailPanel({
           {detail.runs.map((run) => (
             <div className="run" key={run.id}>
               <div>
-                <strong>{runKindLabels[run.kind] ?? run.kind}</strong>
-                <span>{runStatusLabels[run.status] ?? run.status}</span>
+                <strong>{runKindLabel(run.kind) ?? run.kind}</strong>
+                <span>{runStatusLabel(run.status) ?? run.status}</span>
               </div>
               <code>{run.command}</code>
               <div className="run-debug-grid" aria-label="运行调试信息">
@@ -2153,7 +1944,7 @@ function DetailPanel({
           {detail.events.slice().reverse().map((event) => (
             <div className="event" key={event.id}>
               <span>{new Date(event.created_at).toLocaleTimeString()}</span>
-              <strong>{eventTypeLabels[event.type] ?? event.type}</strong>
+              <strong>{eventTypeLabel(event.type) ?? event.type}</strong>
               <p>{event.message}</p>
             </div>
           ))}
@@ -2206,8 +1997,8 @@ function WatchdogPanel({
     );
   }
   const secondsLeft = secondsUntil(state.resume_at);
-  const actionLabel = watchdogActionLabels[state.recommended_action] ?? state.recommended_action;
-  const rootStatus = state.root_status ? (statusLabels[state.root_status] ?? state.root_status) : '无根节点';
+  const actionLabel = watchdogActionLabel(state.recommended_action) ?? state.recommended_action;
+  const rootStatus = state.root_status ? (statusLabel(state.root_status) ?? state.root_status) : '无根节点';
   const budgetValue =
     state.agent_burst_limit > 0 ? `${state.agent_burst_used}/${state.agent_burst_work_limit}` : '不限';
   const reserveValue = state.agent_burst_limit > 0 ? `${state.agent_burst_reserve} 次` : '未启用';
@@ -2559,7 +2350,7 @@ function WatchdogPanel({
             <article className={`agent-diagnostic ${item.severity}`} key={item.task_id}>
               <div>
                 <span>
-                  第 {item.depth} 层 · {item.phase} · {statusLabels[item.status as TaskStatus] ?? item.status}
+                  第 {item.depth} 层 · {item.phase} · {statusLabel(item.status as TaskStatus) ?? item.status}
                 </span>
                 <b>{item.title}</b>
               </div>
@@ -2780,8 +2571,8 @@ function nodeBlockSummary(task: BattlefieldTask, taskById?: Map<string, Battlefi
           return `依赖「${dependencyId}」未找到或未加载`;
         }
         const traced = nodeBlockSummary(dependency, taskById, new Set(seen));
-        const fallback = dependency.error_message || (dependency.status === 'done' ? '已完成' : `状态为 ${statusLabels[dependency.status] ?? dependency.status}`);
-        return `依赖「${dependency.title}」${statusLabels[dependency.status] ?? dependency.status}：${traced ?? fallback}`;
+        const fallback = dependency.error_message || (dependency.status === 'done' ? '已完成' : `状态为 ${statusLabel(dependency.status) ?? dependency.status}`);
+        return `依赖「${dependency.title}」${statusLabel(dependency.status) ?? dependency.status}：${traced ?? fallback}`;
       })
       .filter((item) => item.length > 0);
     if (dependencySummaries.length > 0) {
