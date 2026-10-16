@@ -146,9 +146,14 @@ try {
 
     # 保持前台：Ctrl+C 时 finally 会收尾。不等子进程退出——
     # 目标就是让用户能用 Ctrl+C 一次收干净。
+    #
+    # 注意**不要**写 `@($procs)`：`$procs` 是泛型 `List[object]`，
+    # 用数组子表达式包它会在 PS 5.1 上抛「参数类型不匹配」
+    # （实测踩到：Web 已经起来了，但循环一进来就炸、脚本随即退出）。
+    # 直接对 List 做 foreach 才有定义好的枚举行为。
     while ($true) {
         Start-Sleep -Seconds 2
-        foreach ($p in @($procs)) {
+        foreach ($p in $procs) {
             if ($p -and $p.HasExited) {
                 Write-Host "有服务退出了（pid=$($p.Id)）。看日志：$apiErr / $webErr" -ForegroundColor Yellow
                 Stop-All
