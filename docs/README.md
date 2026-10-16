@@ -28,6 +28,7 @@
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
 | [`provider-matrix.md`](provider-matrix.md) | provider 矩阵：官方/自建网关/本地推理三类端点、`wire_api = "chat"` 为什么会让整份配置加载失败、哪些验过哪些没验 |
 | [`bilingual-ui.md`](bilingual-ui.md) | 界面双语与术语表：覆盖范围怎么声明、8 条不变量是什么、加语言/加文案的操作顺序 |
+| [`acceptance-audit.md`](acceptance-audit.md) | 整体验收审计：逐条对照、**缺口清单**（没有证据的部分）、双仓两个 tip；文档与代码脱节会红 |
 
 ## 想知道它为什么长这样
 
