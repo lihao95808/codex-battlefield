@@ -260,6 +260,16 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
 
 ## 10. 已知限制（如实写下）
 
+* **Linux 侧的阻塞点是"跑不完"，不是"跑错"**（本轮查清）：`run 38965425892` 的 ubuntu 作业
+  加了 `timeout-minutes: 30` 之后，check-run 注解第一次给出了明确原因 ——
+  `[failure] The job has exceeded the maximum execution time of 30m0s`（作业 20:58:01 开始，
+  21:33:01 以 `cancelled` 收尾，`跑 verify_all` 一直 `in_progress`）。
+  也就是说：**`verify_all` 在这台 2 vCPU 的私有仓 runner 上 30 分钟跑不完**（Windows 侧同一套
+  只要 15–18 分钟，其中 pytest 7.6–9 分钟；本机 pytest 1.8 分钟）。
+  之前几次"runner lost communication"是同一条根因的另一种表现（跑太久被杀）。
+  加超时的价值就在这里：把"无声消失"变成**一条能引用的话**。
+  下一步（下一轮的第一件事）：让 Linux 上的门禁**跑得完** —— 分片/并行度/把 E2E 与规模用例
+  拆成独立作业都是候选；单纯把超时调大只是把失败推后。
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
   E2E 步 1 failed / 6 passed）—— 2 vCPU 的 runner 上首屏走不完 180 秒。判据因此在 `process.env.CI`
