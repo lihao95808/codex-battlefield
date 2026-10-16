@@ -123,6 +123,29 @@ $exe = "$env:APPDATA\npm\node_modules\@openai\codex\node_modules\@openai\codex-w
 
 ## 4. 实测踩到的两件事
 
+### 4.0 端点的契约：**必须流式，而且事件序列有硬要求**（离线实测，2026-10-17）
+
+这一条是**不需要凭据**就能验出来的，而且是本文档原来没写的。做法：起一个本机假网关
+（标准库 `http.server`），让**真实的 Codex CLI** 通过它跑一次 planner，
+把收到的原始请求与"什么应答才能让这一侧成功"逐项试出来 ——
+判据在 `api/tests/test_provider_wire_format.py`（F1–F4）。
+
+试出来的两件事，**每一条都是先失败再改对的**：
+
+| 现象（codex 的原话） | 真实原因 | 端点必须做到 |
+|---|---|---|
+| `stream disconnected before completion: stream closed before response.completed` | 这一侧默认发 `"stream": true`，而假网关回了普通 JSON body | 必须支持 **SSE 流式**，并以 `response.completed` 收尾 |
+| `no last agent message; wrote empty content` | 只发了 `response.output_text.delta` / `.done`，**没有** `response.output_item.done` | 事件序列里必须有 **`response.output_item.done`**，且带上完整的 message item |
+
+另外两条（形状层面）：
+
+* 请求打到 **`POST <base_url>/responses`**（`base_url` 以 `/v1` 结尾 → `/v1/responses`）；
+* body 里是 **`input`**（Responses 形状），**不是 `messages`**（Chat Completions 形状）——
+  这也从另一面印证了 4.1 那条"`wire_api = chat` 已经不存在"。
+
+`docs/provider-setup.md` 里那句"多数第三方网关只支持 chat"因此要加一层解释：
+**只实现 Chat Completions 的网关接不上**（不是配置写法问题，是协议不同）。
+
 ### 4.1 新版 codex 不再接受 `wire_api = "chat"`，而且是**整份配置加载失败**
 
 `scripts/use_provider.ps1` 原来的默认值是 `chat`，`use_local_proxy.ps1` 也是。

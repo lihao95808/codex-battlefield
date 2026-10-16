@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件）。
 **文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的提交：公开仓 `70f3be942b1a9a04101eac53621b3bf9bb6590d8`；内部仓 `4394436e065dc49c4b7d6578c1829fe86d5da48b`；本地 HEAD `70f3be9`。
+审计时的提交：公开仓 `86bd25e8a1c1af6e1067a559db0ca5194bc9fe47`；内部仓 `c1adc3edc01a86963e6df2188238667a2bcdde13`；本地 HEAD `86bd25e`。
 
 ## 1. 逐条对照
 
@@ -39,7 +39,7 @@
 | P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例，平台是参数） |
 | P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（15 例，含步骤名逐字同步） |
 | P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵） |
-| P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例，离线结构核对） |
+| P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例，离线结构核对）+ `test_provider_wire_format.py`（F1–F4：本机假网关 + 真实 Codex CLI 试出端点契约） |
 
 ## 2. 缺口清单（**没有证据的部分**）
 
@@ -53,12 +53,12 @@
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西 |
 | P6-3 | 本机**没有触发 Actions 的手段**，CI 没有一次真实绿灯记录 |
 | P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
-| P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据） |
+| P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**（F1–F4：必须支持 SSE 流式 + `response.output_item.done`） |
 
 ## 3. 双仓状态
 
-* 公开仓：`70f3be942b1a9a04101eac53621b3bf9bb6590d8`（`origin/main`）
-* 内部仓：`4394436e065dc49c4b7d6578c1829fe86d5da48b`（`internal/main`）
+* 公开仓：`86bd25e8a1c1af6e1067a559db0ca5194bc9fe47`（`origin/main`）
+* 内部仓：`c1adc3edc01a86963e6df2188238667a2bcdde13`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：
   `BRANCH-codemaker-hub.md`、`api/app/config.py`、`api/tests/test_node_home_config_seed.py`、
   `docs/codemaker-hub-provider.md`、`scripts/codemaker-hub.codex.toml`、
