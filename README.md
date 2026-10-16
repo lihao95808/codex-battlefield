@@ -45,6 +45,35 @@ Codex Battlefield 是一个本地控制台，用来管理动态递归的 Codex �
 
 ## 安装
 
+**一条命令**（Windows PowerShell）：
+
+```powershell
+git clone <repo> && cd <repo>
+.\scripts\setup.ps1
+```
+
+它会先**读 `api/pyproject.toml` 的 `requires-python`** 再据此找解释器（不把版本区间抄进脚本），
+然后检查 Python / Node / 包管理器 / Codex CLI，缺什么给可执行的修复命令（`winget install ...`），
+最后建 venv、装两侧依赖。
+
+```powershell
+.\scripts\setup.ps1 -Check      # 只检查不安装（CI/排障），有缺则非 0 退出
+.\scripts\setup.ps1 -SkipWeb    # 只装后端（不需要界面时）
+```
+
+装完这样起服务：
+
+```powershell
+.\scripts\start.ps1             # 起 API + Web，健康检查通过后自动开浏览器
+.\scripts\start.ps1 -ApiOnly    # 只起后端
+.\scripts\doctor.ps1            # 出问题时先跑这个：每项都带修复命令
+```
+
+> `start.ps1` 是**幂等**的：端口已在监听就复用，不重复起进程；`Ctrl+C` 只停它自己起的那些。
+
+<details>
+<summary>手动安装（不想用脚本时）</summary>
+
 API（Python）——**venv 建在 `api/` 下**：
 
 ```powershell
@@ -64,6 +93,8 @@ Web（Node）：
 cd <repo>\web
 pnpm install
 ```
+
+</details>
 
 ## 5 分钟上手（模拟 runner，不需要 Codex CLI）
 
