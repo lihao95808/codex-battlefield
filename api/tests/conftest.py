@@ -3,6 +3,8 @@ import os
 import pathlib
 import tempfile
 
+import pytest
+
 # The machine safety guard compares host free memory against a fixed threshold. On a host with
 # less free RAM than the production default the guard fires during mock tests and hibernates the
 # tree, which makes the suite depend on the machine it runs on. Disable it by default here; tests
@@ -72,6 +74,36 @@ os.environ["CODEX_BATTLEFIELD_RUNNER"] = "mock"
 # 这正是这些用例想测的东西。
 _CONFIG_PATH = pathlib.Path(tempfile.gettempdir()) / f"codex_battlefield_test_config_{os.getpid()}.toml"
 os.environ["CODEX_BATTLEFIELD_CONFIG"] = str(_CONFIG_PATH)
+
+
+@pytest.fixture(autouse=True)
+def isolate_machine_state(monkeypatch):
+    """每个用例开始时**清掉共享状态根里的工程绑定**（`active.json`）。
+
+    为什么必须做（2026-10-17 实测）：上面那些 `os.environ[...]` 只做到"每个 pytest 进程
+    一个状态根"，而一个进程要跑几百个用例 —— 其中若干用例会 `project_store.mount()`
+    / `set_active()`，写出 `<state_home>/active.json`。于是**同一进程里排在后面的用例
+    继承了这个绑定**：`Settings.machine_root` 指向共享状态根而不是自己的 `tmp_path`
+    → `_watchdog_hook_state` 读不到自己刚写的 `codex_health.json`
+    （`assert state["codex_health_exists"] is True` → `assert False is True`）。
+
+    症状是**并行全量时红、单跑必绿**，而且连跑三次红的集合各不相同（5 条 / 1 条 / 4 条，
+    xdist 的动态分配决定谁继承谁的绑定），每一条单独跑都在 5 秒内通过。
+
+    ⚠️ 这里**只清绑定，不搬状态根**：状态根本身在进程内是 import 期快照
+    （`orchestrator.settings`），搬走会让"校验用的状态根"与 `/api/projects` 报出来的
+    状态根不一致 —— 实测那样会打红 `test_project_binding.py` 的两条 B2
+    （它们拿 `/api/projects` 报的状态根去绑子目录，期望 400）。
+    两处口径不一致本身是**产品侧的账**（生产里两者恰好总是同一个），记在
+    `docs/test-determinism.md`。
+    """
+
+    state_home = pathlib.Path(os.environ["CODEX_BATTLEFIELD_STATE_HOME"])
+    binding = state_home / "active.json"
+    if binding.exists():
+        binding.unlink()
+    monkeypatch.delenv("CODEX_BATTLEFIELD_PROJECT_KEY", raising=False)
+    yield
 
 
 @atexit.register

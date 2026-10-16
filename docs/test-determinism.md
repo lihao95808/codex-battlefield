@@ -101,6 +101,21 @@ PermissionError: [Errno 13] Permission denied: ...\test_godot_slot_capacity_limi
 
 ## 3. 共享状态：不属于任何人的目录
 
+* **跨用例的"工程绑定"泄漏（本轮修掉，第三次同类）**：`api/tests/conftest.py` 已经把状态根
+  隔离到"每个 pytest 进程一个临时目录"，但一个进程要跑几百个用例 —— 其中若干用例会
+  `project_store.mount()` / `set_active()` 写出 `<state_home>/active.json`，
+  于是**同一进程里排在后面的用例继承了那个绑定**：`Settings.machine_root` 指向共享状态根
+  而不是自己的 `tmp_path`，`_watchdog_hook_state` 读不到自己刚写的 `codex_health.json`
+  → `assert state["codex_health_exists"] is True` 变成 `assert False is True`。
+  症状极具迷惑性：**连跑三次，红的集合分别是 5 条 / 1 条 / 4 条，互不相同**，
+  而每一条单独跑都在 5 秒内通过（xdist 的动态分配决定谁继承谁的绑定）。
+  修法：autouse fixture 在每个用例开始前删掉 `<state_home>/active.json` 并清掉
+  `CODEX_BATTLEFIELD_PROJECT_KEY`；修完 `pytest -q` 从"每次红一批"变成 **1693 passed**。
+  **只清绑定、不搬状态根**是刻意的：状态根本身在进程内是 import 期快照
+  （`orchestrator.settings`），搬走会让"校验用的状态根"与 `/api/projects` 报出来的状态根
+  不一致 —— 实测那样会打红 `test_project_binding.py` 的两条 B2。
+  **两处口径不一致本身是产品侧的账**（生产里两者恰好总是同一个，所以看不见），
+  留在这里作为已知项。
 * `test_steward_push.py` 的心跳 fixture 落在 `machine_root_of(settings)`，而 xdist worker 之间
   共享同一个 `workspace` → 别的用例留下的 `watchdog_status.json` 会把"陈旧"判定翻面。
   修法：fixture 里显式 `unlink(missing_ok=True)`，不依赖"上次跑完是干净的"。
