@@ -20,31 +20,9 @@
  * 那个包下到一半超时。`channel: 'chromium'` = 完整浏览器 + 新 headless 模式，
  * 实测能起来（`web/_browser_probe.mjs` 打印 `{"ok":true,...}`，156.0.8078.4）。
  */
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { defineConfig, devices } from '@playwright/test';
 
-// 刻意避开 8765/5173：那两个是本机常驻的开发实例。
-const API_PORT = Number(process.env.CODEX_BATTLEFIELD_E2E_API_PORT || 8877);
-const WEB_PORT = Number(process.env.CODEX_BATTLEFIELD_E2E_WEB_PORT || 5273);
-
-const STATE_DIR = resolve(import.meta.dirname, '.e2e', 'state');
-// sqlite URL 必须是正斜杠，且 Windows 盘符形式 `sqlite:///D:/x/y`。
-const DB_URL = `sqlite:///${resolve(STATE_DIR, 'e2e.sqlite3').replace(/\\/g, '/')}`;
-
-/**
- * 后端的解释器必须是 **`api/.venv` 里那个**。
- *
- * 实测踩过：用裸 `python` 时命中的是系统 Python 3.11，而 uvicorn 装在 3.12 的 venv 里，
- * 报 `No module named uvicorn` —— 而 Playwright 只把整个 webServer 写成
- * "not able to start, exit code 1"，看不出是解释器选错了。
- */
-function backendPython(): string {
-  const root = resolve(import.meta.dirname, '..', 'api', '.venv');
-  const candidates = [resolve(root, 'Scripts', 'python.exe'), resolve(root, 'bin', 'python')];
-  return candidates.find((item) => existsSync(item)) ?? 'python';
-}
+import { API_PORT, DB_URL, STATE_DIR, WEB_PORT, backendPython } from './e2e/e2e-state';
 
 export default defineConfig({
   testDir: './e2e',

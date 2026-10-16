@@ -45,14 +45,14 @@ JUDGEMENTS: dict[str, str] = {
     "P3-3": "`api/tests/test_cost.py`（三维归因；取不到模型名不造假桶）",
     "P3-4": "`api/tests/test_cross_project.py`（按币种分桶、读不到≠0）",
     "P3-5": "`api/tests/test_auto_policy.py`（4 条策略 + 开关 + 触发依据）",
-    "P3-6": "`api/tests/test_scale.py`（1000 节点：130ms/640KB，规模比 < 8）",
+    "P3-6": "`api/tests/test_scale.py`（1000 节点：130ms/640KB，规模比 < 8）+ `web/e2e/perf-first-screen.spec.ts`（真浏览器首屏实测 + 棘轮）",
     "P4-1": "`api/tests/test_delivery.py`",
     "P4-2": "`api/tests/test_watchdog_tuning.py`（记录先于生效）",
     "P4-3": "`api/tests/test_attention.py`（注意账会过期；时间冻结过的用例）",
     "P4-4": "`api/tests/test_action_risk.py`（高风险不可预授权）",
     "P4-5": "`api/tests/test_conclusions.py`（事实与判断分开；空段≠没有）",
     "P5-1": "`api/tests/test_metrics.py`（按路由模板记 p95 + 相对基线退化）",
-    "P5-2": "`web/src/fileSize.test.ts`（棘轮，**预算表现在是空的**）+ `virtualization.test.ts`（13 例）",
+    "P5-2": "`web/src/fileSize.test.ts`（棘轮，**预算表现在是空的**）+ `virtualization.test.ts`（13 例）+ `web/e2e/perf-first-screen.spec.ts`（千节点首屏实测）",
     "P5-3": "`web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器）",
     "P5-4": "`api/tests/test_retention.py`（清理后仍能还原）",
     "P5-5": "`api/tests/test_trace_correlation.py`（10 例 + 四组变异）",
@@ -66,7 +66,12 @@ JUDGEMENTS: dict[str, str] = {
 
 #: 缺口 → 缺什么。带"未验"字样的条目必须有这里的一条说明（没有就是审计自己的缺口）。
 GAP_REASONS: dict[str, str] = {
-    "P5-2": "长列表虚拟化已做；**“千节点首屏 < 2s”仍未量**（E2E 验的是接缝不是耗时）",
+    "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）；**前端首屏未达标**：真浏览器实测 "
+    "cold 2.4–4.8s / warm 2.2–3.9s（目标 < 2s；最好的一次 2422ms 也在目标之上）。判据里留了目标值与 6s 棘轮（只防变慢），"
+    "下一步线索：前端一次首屏**取了两次树**、服务端在跑 orchestrator 时同一棵树 0.2–2.3s "
+    "（单元判据 130ms）、渲染成本尚未单独量 —— 见 `docs/scale-baseline.md` §5",
+    "P5-2": "长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”**"
+    "已实测**未达标**（cold 2.4–4.8s，最好的一次 2422ms），判据 `web/e2e/perf-first-screen.spec.ts` 目前只保证不变慢",
     "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）",
     "P6-2": "本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过）",
     "P6-3": "**Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），"

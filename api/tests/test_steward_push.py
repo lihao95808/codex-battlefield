@@ -25,7 +25,8 @@ import pytest
 
 from app import steward_alerts, steward_proactive
 from app.config import get_settings, machine_root_of
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal, engine, init_db
+from app.models import Base
 from app.watchdog import _parse_iso_utc, watchdog_heartbeat_state
 
 
@@ -376,7 +377,13 @@ def test_stale_watchdog_on_an_empty_tree_is_not_an_alert() -> None:
 
     空树没有依赖看门狗的东西，这时报停摆是打扰（新装、闲置都会命中）。
     只在真有活可看时才值得打扰用户。
+
+    ⚠️ 前提是"空树"，而 `SessionLocal` 是**同一个测试库**：上一个用例留下的节点会让
+    `counts.total` 变成 1（实测：整套门禁里红、单跑必绿）。所以这里**自己清空**，
+    不依赖"别人跑完会收拾干净" —— 那种依赖正是 flake 的温床（同文件里已有过一次同类事故：
+    心跳文件落在共享 `workspace` 上，见 `docs/test-determinism.md` §3）。
     """
+    Base.metadata.drop_all(bind=engine)
     init_db()
     settings = _settings()
     with SessionLocal() as db:

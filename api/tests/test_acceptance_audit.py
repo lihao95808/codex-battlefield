@@ -205,6 +205,24 @@ def test_q4_e2e_spec_exists_and_the_workflow_runs_it():
     assert "verify_all.py" in workflow, "CI 必须跑同一套门禁"
 
 
+def test_q4_scale_first_screen_judgement_exists():
+    """P3-6/P5-2 的"千节点首屏"这条判据必须有**真浏览器**的落点，且树是同形的。
+
+    只有 `virtualization.test.ts` 那种"交给布局器的节点有界"是不够的：有界 ≠ 快。
+    """
+
+    spec = REPO / "web" / "e2e" / "perf-first-screen.spec.ts"
+    seeder = REPO / "web" / "e2e" / "seed_scale_tree.py"
+    assert spec.is_file(), "千节点首屏的 E2E 判据不见了"
+    assert seeder.is_file(), "造同形千节点树的脚本不见了（判据会退化成量一棵空树）"
+    text = spec.read_text(encoding="utf-8")
+    # 目标与棘轮必须都在：只有棘轮的话，"2s 没达到"这件事会从代码里消失。
+    assert "TARGET_MS = 2000" in text, "判据里必须留着 ROADMAP 的目标值（2000ms）"
+    assert "RATCHET_MS" in text, "判据里必须有防变慢的棘轮"
+    # 走生产产物而不是 dev server：dev server 的数字不配叫"首屏"。
+    assert "API_PORT" in text and "dist" in text, "这条判据必须量 API 托管的生产产物"
+
+
 # --- Q5 双仓同步（有远端时才算） --------------------------------------------
 
 
