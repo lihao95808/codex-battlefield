@@ -15,8 +15,18 @@
 | `taskView.ts` / `uiPrimitives.tsx` / `browserSession.ts` | 纯函数与类型、小 UI 原语、URL/预览窗口这些浏览器侧动作 |
 
 本轮之后 `App.tsx` **从预算表里删掉**（棘轮第 4 条：达标的条目不许留着），
-`BUDGET_TOTAL` 5061 → **3129**。仍然超标的四个：`types.ts` 948、`api.ts` 833、
-`useBattlefieldController.ts` 783、`StewardPanel.tsx` 565 —— 都如实留在表里。
+`BUDGET_TOTAL` 5061 → **3129**。
+
+第三轮（同一轮内继续）把剩下三个大文件也拆了：
+
+| 原文件 | 之前 | 现在 | 拆法 |
+|---|---|---|---|
+| `types.ts` | 948 | 8（聚合出口） | 类型按领域进 `types-task` / `types-steward` / `types-state` / `types-insight` |
+| `api.ts` | 833 | 10（聚合出口） | 函数按领域进 `api-tree` / `api-steward` / `api-insight` / `api-state`；公共的 `readDetail` 进 `api-http` |
+| `StewardPanel.tsx` | 565 | 468 | 动作收件箱进 `StewardActionInbox.tsx` |
+
+`BUDGET_TOTAL` 3129 → **783**，**全仓只剩一个文件超标**：`useBattlefieldController.ts`（783）。
+
 
 判据：`format.test.ts`（36 例）、`polling.test.ts`（11 例）、`fileSize.test.ts`（11 例）。
 
