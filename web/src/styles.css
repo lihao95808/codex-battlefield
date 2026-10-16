@@ -2952,6 +2952,243 @@ select:focus {
   }
 }
 
+/* ===== 运行记录与产物查看器（P2-3）=====
+   "这一步为什么错了"是最高频的排障动作。所以失败必须是这一块里最显眼的东西，
+   而不是无数行等宽文字中的一行。 */
+
+.run-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #6b7a90;
+  border-radius: 8px;
+}
+
+.ri-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ri-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ri-task-title {
+  font-size: 12px;
+  color: #4a5a70;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ri-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7a90;
+}
+
+.ri-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #822727;
+  background: #fdeeee;
+  border: 1px solid #e9c2c2;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.ri-warn {
+  margin: 0;
+  font-size: 11px;
+  color: #8a4b12;
+}
+
+.ri-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ri-run {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid #e2e8f1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ri-run:hover {
+  border-color: #c3d6ec;
+}
+
+.ri-run-on {
+  border-color: #3f6ea8;
+  background: #f4f8fd;
+}
+
+.ri-run-kind {
+  font-weight: 600;
+  color: #24446e;
+  min-width: 76px;
+}
+
+.ri-run-status {
+  padding: 1px 6px;
+  border-radius: 9px;
+  border: 1px solid;
+}
+
+.ri-tone-bad {
+  color: #822727;
+  background: #fdeeee;
+  border-color: #e9c2c2;
+}
+
+.ri-tone-ok {
+  color: #2f5d33;
+  background: #eef7ef;
+  border-color: #bcdcbf;
+}
+
+.ri-tone-wait {
+  color: #24446e;
+  background: #eaf1fa;
+  border-color: #c3d6ec;
+}
+
+.ri-tone-muted {
+  color: #5d6b7e;
+  background: #f2f4f7;
+  border-color: #dde2e9;
+}
+
+.ri-run-time {
+  margin-left: auto;
+  color: #8895a8;
+  font-size: 11px;
+}
+
+.ri-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid #e6ebf2;
+  padding-top: 8px;
+}
+
+.ri-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ri-tab {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #cfd8e3;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ri-tab-on {
+  border-color: #3f6ea8;
+  background: #eaf1fa;
+  color: #24446e;
+}
+
+.ri-copy {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.ri-artifact-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: #8895a8;
+  word-break: break-all;
+}
+
+/* 产物用等宽 + 限高滚动：这几百 KB 不能把整个侧栏撑爆。 */
+.ri-pre {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  background: #0f172a;
+  color: #d7e3f4;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ri-events {
+  font-size: 12px;
+}
+
+.ri-events > summary {
+  cursor: pointer;
+  color: #5d6b7e;
+  padding: 2px 0;
+}
+
+.ri-event-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ri-event-list li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ri-event-time {
+  color: #8895a8;
+  flex-shrink: 0;
+}
+
+.ri-event-type {
+  color: #24446e;
+  background: #eef3fa;
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.ri-event-msg {
+  color: #3d4c61;
+  word-break: break-word;
+}
+
 /* ===== 工程绑定（首次运行引导，P1-5）=====
    未绑定时它要"抢眼但不吓人"：用户第一次打开界面看到的就是这个面板，
    而它唯一要说清的事情是"下一步做什么"。 */

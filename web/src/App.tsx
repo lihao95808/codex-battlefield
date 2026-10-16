@@ -56,6 +56,7 @@ import {
 } from './api';
 import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
+import { RunInspector } from './RunInspector';
 import { StewardPanel } from './StewardPanel';
 import {
   constitutionBoardFromStats,
@@ -1355,6 +1356,8 @@ export function App() {
         />
 
         <ProjectOnboarding onBound={() => loadTree().catch(() => undefined)} />
+
+        <RunInspector taskId={selectedId} />
 
         <StewardPanel layout={layoutState} onOpen={() => loadTree().catch(() => undefined)} />
 
