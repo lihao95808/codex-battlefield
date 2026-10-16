@@ -10,6 +10,17 @@
 
 单元切分按**未转义**的 `|` 走：表格单元里的 `\\|`（例如代码跨度里的 `dict \\| None`）是合法字面竖线，
 不是列分隔符——第一版量具把它们当分隔符，报了假阳性，这条是那时踩出来的。
+
+## 为什么这里要动 stdout 的编码
+
+这份脚本会打印中文摘要，而它的**输出编码由环境决定**：GitHub 的 `windows-latest` 上
+Python 默认是 cp1252，打印中文就是 `UnicodeEncodeError: 'charmap' codec can't encode ...`
+—— 整条 CI 会死在这一步（实测：run 38895747296，`check_markdown_layout.py:96`）。
+本机是中文 Windows（cp936）所以看不出来。
+
+所以：能改成 UTF-8 就改成 UTF-8；改不了（例如终端编码由宿主写死）就退化成 `replace`，
+**绝不因为"摘要打不出来"而让检查本身失败** —— 门禁的价值是 verdict，不是那行摘要。
+`scripts/verify_all.py` 另外给所有子进程钉了 `PYTHONIOENCODING=utf-8`（覆盖 CI 的正路）。
 """
 
 from __future__ import annotations
@@ -19,6 +30,27 @@ import re
 import sys
 
 SKIP_DIRS = {".git", ".venv", "node_modules", "dist", "__pycache__", "workspace", ".godot", ".pytest_cache", ".mypy_cache"}
+
+
+def _ensure_output_encoding() -> None:
+    """让"打印摘要"这件事永远不会把检查本身搞崩。
+
+    顺序：能改成 UTF-8 就改（CI 与本机都最准确）；改不了就退化成 `errors="replace"`。
+    两种情况都不允许抛出去 —— 门禁的价值是 verdict，不是那行摘要。
+    """
+
+    stream = sys.stdout
+    if not hasattr(stream, "reconfigure"):
+        return
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+        return
+    except (OSError, ValueError):
+        pass
+    try:
+        stream.reconfigure(errors="replace")
+    except (OSError, ValueError):
+        pass
 
 
 def split_cells(stripped: str) -> list[str]:
@@ -71,6 +103,7 @@ def check(path: pathlib.Path) -> list[str]:
 
 
 def main() -> int:
+    _ensure_output_encoding()
     targets: list[pathlib.Path] = []
     for raw in sys.argv[1:]:
         path = pathlib.Path(raw)

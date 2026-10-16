@@ -97,6 +97,13 @@ jobs:
         env:
           CODEX_BATTLEFIELD_RUNNER: mock
           CODEX_BATTLEFIELD_MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB: '0'
+          # Windows runner 上 Python 的默认 stdout 编码是 **cp1252**，而脚本会打印中文摘要
+          # —— 实测红在 `check_markdown_layout.py` 的 `UnicodeEncodeError: 'charmap' codec ...`，
+          # Windows 那一侧连第二步都没跑到（run 38895747296 / 38943620205）。
+          # `verify_all` 也会给每个子进程钉这两个变量；这里再设一遍是为了覆盖
+          # "workflow 里直接调 python" 的情形（例如下面收集诊断那一步）。
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: '1'
         run: |
           if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
           "$PY" scripts/verify_all.py

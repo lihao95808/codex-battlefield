@@ -16,16 +16,27 @@
 | W7 | `fail-fast: false` | 一个平台失败会取消另一个 → 只看到一边，误以为另一边是好的 |
 | W8 | 失败时收集诊断 | PR 上只看到 `exit 1`，还得本地复现一遍 |
 | W9 | **工作流与 `verify_all` 的实际步骤对得上** | `verify_all` 加了新步骤而 CI 没跟上（或反之），两边悄悄分叉 |
+| W10 | 子进程的 **stdout 编码**被钉成 UTF-8 | Windows runner 是 cp1252 → 第一个打印中文的步骤就 `UnicodeEncodeError` 退出（**真实红过**：run 38895747296 / 38943620205 都死在「文档排版检查」） |
+| W11 | 单个脚本在 cp1252 的 stdout 下也**不崩** | 有人直接 `python scripts/check_markdown_layout.py .`（不走 verify_all）时炸在打印摘要上 |
 
 W9 是最有价值的一条：它防的是**两份"门禁"慢慢变成不同的东西**。
 做法是从 `verify_all.py` 源码里抽出它的步骤名，再核 CI 里的注释是否提到它们 ——
 比硬编码一份清单可靠（硬编码会在改 `verify_all` 时过期）。
+
+W10/W11 是**真 CI 反馈**换来的：这两条不是想出来的，是 GitHub Actions 在 Windows 上
+红给我看的（本机中文 Windows 是 cp936，永远看不到）。它们的形态值得记住：
+**同一个脚本、同一份代码，只因为"输出编码由环境决定"就整条门禁死在第一步。**
 """
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import pathlib
 import re
+import subprocess
+import sys
+import textwrap
 
 import pytest
 import yaml
@@ -33,6 +44,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "verify.yml"
 VERIFY_ALL = ROOT / "scripts" / "verify_all.py"
+MARKDOWN_CHECKER = ROOT / "scripts" / "check_markdown_layout.py"
 
 
 @pytest.fixture(scope="module")
@@ -244,6 +256,94 @@ def test_w9_verify_all_still_exists_and_is_the_gate(verify_steps: list[str]) -> 
     assert len(verify_steps) >= 6, verify_steps
     assert "后端 pytest" in verify_steps
     assert "前端 build" in verify_steps
+
+
+# ---------- W10/W11 子进程编码（CI 上真实红过的一条） ----------
+
+
+def _cp1252_env() -> dict[str, str]:
+    """模拟 GitHub **Windows runner** 的 Python stdout 默认编码。"""
+
+    return {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+
+
+def test_w10_verify_all_pins_utf8_for_subprocesses(tmp_path: pathlib.Path) -> None:
+    """`verify_all` 的每个子进程都必须拿到 UTF-8 —— 用**真子进程**验，不查源码字符串。
+
+    探针是"用 `verify_all.run_step` 起一个打印中文的子进程"：把 stdout 环境设成 cp1252
+    （= CI 的 Windows runner），如果 `step_env()` 没把编码钉回来，子进程会
+    `UnicodeEncodeError` 退出，`run_step` 抛 `SystemExit` → 探针退出码非 0。
+    """
+
+    probe = tmp_path / "encoding_probe.py"
+    probe.write_text(
+        textwrap.dedent(
+            f"""
+            import importlib.util
+            import pathlib
+            import sys
+
+            spec = importlib.util.spec_from_file_location("verify_all_under_test", r"{VERIFY_ALL}")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            module.run_step(
+                "编码探针",
+                [sys.executable, "-c", "print('中文摘要不会崩')"],
+                pathlib.Path(r"{ROOT}"),
+            )
+            print("PROBE-OK")
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=ROOT,
+        env=_cp1252_env(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=180,
+    )
+    assert proc.returncode == 0, f"cp1252 下子进程打印中文就崩（= CI 上 Windows 那一侧）：{proc.stdout[-800:]}"
+    assert "PROBE-OK" in proc.stdout, proc.stdout
+    assert "中文摘要不会崩" in proc.stdout, proc.stdout
+
+
+def test_w10_workflow_sets_the_same_encoding(workflow: dict) -> None:
+    """工作流自己也要设 —— 它还有"直接调 python"的步骤（例如收集诊断）。"""
+
+    envs = [
+        (step.get("env") or {})
+        for job in (workflow.get("jobs") or {}).values()
+        for step in (job.get("steps") or [])
+    ]
+    assert any(
+        str(values.get("PYTHONIOENCODING", "")).lower().replace("-", "") in ("utf8", "utf8mb4", "cp65001")
+        for values in envs
+    ), "工作流里没有任何一步设 PYTHONIOENCODING=utf-8 —— Windows runner 上打印中文就会红"
+
+
+def test_w11_markdown_checker_survives_cp1252_stdout() -> None:
+    """不走 verify_all 时，单个脚本也必须能打印摘要（编码改不了就退化，不许崩）。"""
+
+    proc = subprocess.run(
+        [sys.executable, str(MARKDOWN_CHECKER), "."],
+        cwd=ROOT,
+        env=_cp1252_env(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=300,
+    )
+    assert proc.returncode == 0, f"cp1252 下文档排版检查崩了：{proc.stdout[-500:]} {proc.stderr[-800:]}"
+    assert "个 .md" in proc.stdout, f"摘要没打出来：{proc.stdout[-300:]}"
 
 
 # ---------- 我**不能**验证的事（如实写下来） ----------

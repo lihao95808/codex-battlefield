@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -50,11 +51,31 @@ def run_check(name: str, check: Callable[[], None]) -> None:
     check()
 
 
+def step_env() -> dict[str, str]:
+    """子进程环境：把**编码**钉死成 UTF-8。
+
+    这不是"保险起见"，是 CI 上真实红过的一条：GitHub 的 `windows-latest` 上
+    Python 的 stdout 编码是 **cp1252**，而本仓库的脚本会打印中文摘要 ——
+    第一个打印中文的步骤直接 `UnicodeEncodeError: 'charmap' codec can't encode ...`
+    退出，于是 Windows 那一侧的 CI 从来没跑过第二步（实测：run 38895747296 与
+    38943620205 都停在「文档排版检查」，`scripts/check_markdown_layout.py:96`）。
+
+    本机是中文 Windows（cp936）所以本地全绿 —— 这正是"只有本机能过"的典型形态，
+    也正是双平台 CI 要挡的东西。`PYTHONIOENCODING` 管所有 Python 子进程（含 pytest）；
+    `PYTHONUTF8=1` 是同一件事更宽的开关，两个都设是不依赖解释器版本差异。
+    """
+
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
 def run_step(name: str, command: list[str], cwd: Path) -> None:
     print(f"\n==> {name}")
     print(f"目录：{cwd}")
     print(f"命令：{' '.join(command)}")
-    result = subprocess.run(command, cwd=cwd)
+    result = subprocess.run(command, cwd=cwd, env=step_env())
     if result.returncode != 0:
         raise SystemExit(result.returncode)
 
