@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `2278832ec362bf747e155032c133e82ee37d4e08`、内部仓 `73ef563afc875db8f13bfa42dfea5d5cea6a47eb`。
+审计时的两个远端 tip：公开仓 `4917d75887b679bce4bcb201c54f63e16d25f881`、内部仓 `6e67ba1fabd767163507d43ae6d50dcfa26a071f`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -42,7 +42,7 @@
 | P5-6 | 已落地 | `api/tests/test_crash_injection.py`（每个写入阶段硬杀一次） |
 | P6-1 | 部分落地 | `api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽） |
 | P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4） |
-| P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（15 例，含步骤名逐字同步） |
+| P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码） |
 | P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵） |
 | P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例）+ `test_provider_wire_format.py`（F1–F4：假网关 + 真实 CLI 试出端点契约） |
 
@@ -56,14 +56,14 @@
 | P5-2 | 长列表虚拟化已做；**“千节点首屏 < 2s”仍未量**（E2E 验的是接缝不是耗时） |
 | P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过） |
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
-| P6-3 | 本机**没有触发 Actions 的手段**，CI 没有一次真实绿灯记录（工作流结构已用 W1–W9 验过） |
+| P6-3 | **旧结论“没有触发 Actions 的手段”是错的**：CI 一直在跑（`on: push`），但 20 次运行里 17 次被下一次推送取消 —— “推完就走”把门禁自己取消掉了。唯一一次给出结论的 `failure` 抓到了真问题：Windows runner 的 cp1252 让门禁死在第 1 步（已修，W10/W11 钉住）。**Linux 侧 45 分钟未跑完、日志 404，没有一次跑完的记录** —— “CI 会绿”仍无证据 |
 | P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
 | P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**（F1–F4：必须支持 SSE 流式 + `response.output_item.done`） |
 
 ## 3. 双仓状态
 
-* 公开仓：`2278832ec362bf747e155032c133e82ee37d4e08`（`origin/main`）
-* 内部仓：`73ef563afc875db8f13bfa42dfea5d5cea6a47eb`（`internal/main`）
+* 公开仓：`4917d75887b679bce4bcb201c54f63e16d25f881`（`origin/main`）
+* 内部仓：`6e67ba1fabd767163507d43ae6d50dcfa26a071f`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。
@@ -76,15 +76,19 @@
 ## 4. 结论
 
 **P2–P5 的交付物都有判据，且判据在 `verify_all` 里跑。** P6 的五条里，
-三条（容器化 / 跨平台 / CI）**结构无法在本机实测**（但语法、平台分派、工作流结构都已静态验过），
-一条（弱模型）只到 planner 粒度，一条（provider 矩阵）缺真实端点的可达性与鉴权
-（**端点契约**已用本机假网关实测）。
+两条（容器化 / 跨平台）缺的是**执行环境**：本机没有 Docker、没有 Linux，
+所以“界面可用”“在 Linux 上跑通”这两句都没有证据（语法、平台分派、工作流结构都已静态验过）。
+CI 那条**有了新证据**：它一直在跑（`on: push`），唯一一次给出结论的运行抓到了
+**Windows 侧 cp1252 把门禁死在第 1 步**（已修，W10/W11 钉住）；但 **Linux 侧没有一次跑完的记录**
+（45 分钟未完成、日志 404）。一条（弱模型）只到 planner 粒度，一条（provider 矩阵）
+缺真实端点的可达性与鉴权（**端点契约**已用本机假网关实测）。
 
 所以整体目标**不标记完成**：缺口是**环境**造成的（没有 Docker、没有 Linux、
-没有 CI 触发手段、没有真实端点凭据、没有真实模型额度），不是实现没写。
-补上它们的成本按信息量排序：
+没有真实端点凭据、没有真实模型额度）。注意“没有 CI 触发手段”这条**已作废** ——
+CI 从来就在跑，是我们没等它跑完（见 `docs/ci.md` §5）。补上它们的成本按信息量排序：
 
-1. **让双平台 CI 真跑一次** —— 能把 P6-2 与 P6-3 的一半假设变成事实或反例，成本几乎为零；
+1. **等一次完整的双平台 CI 跑完** —— 现在它真的会跑，代价只是时间；
+   能把 P6-2 与 P6-3 的一半假设变成事实或反例；
 2. 一台有 Docker 的机器跑 `docker compose up` —— 验 P6-1 的“界面可用”；
 3. 一个真实端点（任意 OpenAI 兼容）跑 `verify_provider_planner.py` —— 验 P6-5 的通道；
 4. 授权真实模型额度后跑 `probe_weak_model_planner.py` 的 worker 档 —— 验 P6-4 的后半段。
