@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `098c477e650075eca47ae5679c329915462ea502`、内部仓 `c9aa720467dfe78ef6f924c7208f0a59fa9ac53b`。
+审计时的两个远端 tip：公开仓 `8db29c819f2aa7c416361634dcbc22b8f28823d1`、内部仓 `41efa1bfe87fb6216cae2bcce73d6545e3f45ec9`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -62,8 +62,8 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`098c477e650075eca47ae5679c329915462ea502`（`origin/main`）
-* 内部仓：`c9aa720467dfe78ef6f924c7208f0a59fa9ac53b`（`internal/main`）
+* 公开仓：`8db29c819f2aa7c416361634dcbc22b8f28823d1`（`origin/main`）
+* 内部仓：`41efa1bfe87fb6216cae2bcce73d6545e3f45ec9`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：
   `BRANCH-codemaker-hub.md`、`api/app/config.py`、`api/tests/test_node_home_config_seed.py`、
   `docs/codemaker-hub-provider.md`、`scripts/codemaker-hub.codex.toml`、

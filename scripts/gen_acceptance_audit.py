@@ -182,6 +182,19 @@ def render() -> str:
     return "\n".join(lines)
 
 
+def normalise(text: str) -> str:
+    """比对用：忽略行尾差异（CRLF/LF 由 git 管），并**抹掉内部仓的 tip**。
+
+    为什么要把内部仓的 tip 从比对里去掉：**同步内部仓会写 `refs/heads/hub`**，
+    也就是本地那个 `internal/main` 在"推送主仓之后、同步之前"必然与文档不一致 ——
+    这是流程决定的，不是文档过期。公开仓的 tip 则不受影响（同步不改它），
+    所以它仍然参与比对 —— 它才是"这份审计对应哪一版公开仓"的那个锚。
+    """
+
+    cleaned = text.replace("\r\n", "\n")
+    return re.sub(r"内部仓 `[0-9a-f]{7,40}`", "内部仓 `<tip>`", cleaned)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成验收审计文档。")
     parser.add_argument("--check", action="store_true", help="只检查是否与当前状态一致（不写文件）")
@@ -190,8 +203,7 @@ def main() -> int:
     rendered = render()
     if args.check:
         current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
-        # 只比"内容是否一致"，忽略行尾差异（CRLF/LF 由 git 管）。
-        same = current.replace("\r\n", "\n") == rendered.replace("\r\n", "\n")
+        same = normalise(current) == normalise(rendered)
         print("一致" if same else "过期：请跑 python scripts/gen_acceptance_audit.py")
         return 0 if same else 1
 
