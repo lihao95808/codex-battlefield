@@ -143,6 +143,19 @@ class OneShotProjectRequest(BaseModel):
     goal: str = Field(min_length=1)
 
 
+class BindProjectRequest(BaseModel):
+    """绑定一个工程目录（`POST /api/projects/bind`）。
+
+    `path` 必填且不能空白：空白路径会被 `validate_project_root` 当成当前目录，
+    于是"我明明点了绑定，它却绑到了 API 的工作目录"—— 这类错最难查，
+    因为每一步看起来都成功了。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1)
+
+
 class ProjectStartResponse(BaseModel):
     root_id: str
     status: str

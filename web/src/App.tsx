@@ -55,6 +55,7 @@ import {
   updateConstitution,
 } from './api';
 import { layoutBattlefield } from './layout';
+import { ProjectOnboarding } from './ProjectOnboarding';
 import { StewardPanel } from './StewardPanel';
 import {
   constitutionBoardFromStats,
@@ -1352,6 +1353,8 @@ export function App() {
           onRunOnce={onRunWatchdogOnce}
           onToggleDrain={onToggleApiRestartDrain}
         />
+
+        <ProjectOnboarding onBound={() => loadTree().catch(() => undefined)} />
 
         <StewardPanel layout={layoutState} onOpen={() => loadTree().catch(() => undefined)} />
 

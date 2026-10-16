@@ -362,6 +362,40 @@ export interface StateLayoutResponse {
   snapshot_matches_active_file: boolean;
 }
 
+/** 一个已挂载的工程（`GET /api/projects`）。 */
+export interface MountedProject {
+  key: string;
+  root: string;
+  project_dir: string;
+  db_path: string;
+  db_exists: boolean;
+  db_size_bytes: number;
+  /** 工程目录现在是否真的存在（可能被删或移走过）。 */
+  root_exists: boolean;
+  /** 是否为当前工程。 */
+  active: boolean;
+  /**
+   * 状态目录与工程是否同一块盘。false 时 `git worktree` 不可靠 ——
+   * 这是"能绑但会出错"的情形，界面必须提前说，而不是等跑到一半才炸。
+   */
+  drive_matches: boolean;
+}
+
+export interface MountedProjectsResponse {
+  state_home: string;
+  active_key: string;
+  projects: MountedProject[];
+}
+
+export interface BindProjectResponse {
+  status: string;
+  project: MountedProject;
+  /** 绑定写的是 active.json；当前进程仍连着旧库，需要重启才生效。 */
+  restart_required: boolean;
+  message: string;
+  warnings: string[];
+}
+
 export interface ConstitutionResponse {
   id: string;
   root_id: string | null;

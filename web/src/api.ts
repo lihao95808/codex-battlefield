@@ -4,6 +4,8 @@ import type {
   ConstitutionResponse,
   ObligationIndexBoard,
   RunArtifactResponse,
+  BindProjectResponse,
+  MountedProjectsResponse,
   StateLayoutResponse,
   StewardActionDecision,
   StewardActionsResponse,
@@ -149,6 +151,48 @@ export async function fetchStateLayout(): Promise<StateLayoutResponse> {
   const response = await fetch('/api/state');
   if (!response.ok) {
     throw new Error(`状态布局读取失败：${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 已挂载的工程清单 + 当前是哪个。
+ *
+ * 未绑定工程时界面上原来只有一行小字，用户不知道下一步做什么。这份清单让
+ * "我现在在哪 / 有哪些可选 / 怎么绑" 都能在界面里回答，不必回到命令行。
+ */
+export async function fetchProjects(): Promise<MountedProjectsResponse> {
+  const response = await fetch('/api/projects');
+  if (!response.ok) {
+    throw new Error(`工程清单读取失败：${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 绑定（挂载）一个工程目录并设为当前。
+ *
+ * 注意返回值里的 `restartRequired`：绑定写的是 `active.json`，而**当前进程**的
+ * 库连接与工作目录是启动时定下的。所以"绑好了"和"生效了"是两件事，
+ * 界面必须把这一点说出来，否则用户会以为点了就切过去了。
+ */
+export async function bindProject(path: string): Promise<BindProjectResponse> {
+  const response = await fetch('/api/projects/bind', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    // 后端把拒绝原因写在 detail 里（目录不存在、状态根当工程、跨盘…），
+    // 那是给用户看的，原样带上来比"绑定失败：400"有用得多。
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? '';
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || `绑定失败：${response.status}`);
   }
   return response.json();
 }

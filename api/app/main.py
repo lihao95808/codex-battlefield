@@ -29,10 +29,19 @@ from .events import event_bus
 from .models import ConstitutionRecord, StewardAction, TaskStatus
 from .orchestrator import orchestrator
 from .runner import make_runner
+from .project_store import (
+    ProjectError,
+    current_project,
+    list_projects,
+    mount,
+    validate_project_root,
+    worktree_drive_matches,
+)
 from .state_layout import read_active_project
 from .steward_capabilities import catalog as steward_catalog
 from .steward_status import build_status as build_steward_status
 from .schemas import (
+    BindProjectRequest,
     ApiRestartDrainResponse,
     BudgetGuardRequest,
     BudgetGuardResponse,
@@ -210,6 +219,102 @@ def state_layout() -> dict:
     info["active_file_root"] = str(active_root) if active_root else None
     info["snapshot_matches_active_file"] = (active_key == layout.project_key)
     return info
+
+
+def _mounted_payload(project: Any, *, active_key: str) -> dict:
+    return {
+        "key": project.key,
+        "root": str(project.root),
+        "project_dir": str(project.project_dir),
+        "db_path": str(project.db_path),
+        "db_exists": bool(project.db_exists),
+        "db_size_bytes": project.db_size_bytes(),
+        "root_exists": Path(project.root).is_dir(),
+        "active": project.key == active_key,
+        # 状态目录与工程**不同盘**时 git worktree 不可靠（`worktree_drive_matches` 的判据）。
+        # 界面要能提前提醒，而不是等用户跑到一半才发现。
+        "drive_matches": worktree_drive_matches(project.project_dir, project.root),
+    }
+
+
+@app.get("/api/projects")
+def list_mounted_projects() -> dict:
+    """已挂载的工程清单 + 当前是哪个。
+
+    为什么界面需要它：未绑定工程时，新用户看到的是空状态而不知道下一步；
+    绑定之后又要能确认"我现在在哪个工程"。这两件事都需要一份**可读的清单**，
+    而不是让用户去敲 `battlefield-project list`。
+    """
+    settings = orchestrator.settings
+    state_home = settings.layout.state_home
+    active = current_project(state_home=state_home)
+    active_key = active.key if active else ""
+    projects = list_projects(state_home=state_home)
+    return {
+        "state_home": str(state_home),
+        "active_key": active_key,
+        "projects": [_mounted_payload(p, active_key=active_key) for p in projects],
+    }
+
+
+@app.post("/api/projects/bind")
+def bind_project(payload: BindProjectRequest) -> dict:
+    """绑定（挂载）一个工程目录并设为当前。
+
+    与 CLI 的 `battlefield-project use` 走**同一个** `project_store.mount()`：
+    分成两份实现迟早漂移，而漂移的后果是"界面绑的工程 CLI 看不到"。
+    """
+    _ensure_mutable()
+    # 先做**结构性**校验（绝对路径 / 盘符根 / 状态根），再查存在性。
+    #
+    # 顺序有讲究：相对路径即使**碰巧存在**也该被拒，而它一旦先撞上"目录不存在"
+    # 就会拿到一条误导的错误（实测：`some/relative/dir` 报的是"不存在"）。
+    # 先报结构性原因，用户才知道自己真正要改什么。
+    try:
+        validate_project_root(payload.path)
+    except ProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # **界面绑定要求目录真的存在**（CLI 不同：它允许"先绑、以后再建"）。
+    #
+    # 差别是有意的：CLI 的调用者知道自己打的是什么；而界面是输入/点选，
+    # 打错一个字母就会静默绑到一个永远跑不起来的工程 —— 实测里
+    # `Z:\definitely-not-here` 当时是**成功挂载**的，用户只会看到"绑定成功"。
+    if not Path(payload.path.strip()).is_dir():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"这个目录不存在（或不是一个目录）：{payload.path.strip()}\n"
+                "  界面绑定要求目录已存在。想先绑一个还没建的目录，用 CLI："
+                "battlefield-project use <目录>"
+            ),
+        )
+    try:
+        project = mount(payload.path, state_home=orchestrator.settings.layout.state_home)
+    except ProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 绑定写的是 active.json；本进程的库连接和 cwd 都是启动时定下的，
+    # **不会**因此改变。这一点必须说清楚，否则用户会以为"点了就切好了"。
+    needs_restart = project.key != orchestrator.settings.layout.project_key
+    project_payload = _mounted_payload(project, active_key=project.key)
+    warnings: list[str] = []
+    if needs_restart:
+        warnings.append("当前 API 仍连着启动时那个库，**重启 API 后生效**。")
+    if not project_payload["drive_matches"]:
+        # 跨盘时 `git worktree` 有已知兼容问题（见 `worktree_drive_matches`）。
+        # 这是"能绑但会出错"的情形，必须提前讲，而不是等跑到一半才炸。
+        warnings.append(
+            "状态目录与工程**不在同一块盘**：git worktree 在跨盘时不可靠，"
+            "建议把状态根换到工程所在盘。"
+        )
+    return {
+        "status": "mounted",
+        "project": project_payload,
+        "restart_required": needs_restart,
+        "warnings": warnings,
+        "message": "已绑定。" + ("".join(warnings) if warnings else "API 本来就连着它。"),
+    }
 
 
 @app.get("/api/steward/status")
