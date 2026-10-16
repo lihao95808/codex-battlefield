@@ -6888,13 +6888,34 @@ class Orchestrator:
     def _codex_health_summary_text(self, value: Any) -> str:
         return watchdog.codex_health_summary_text(value)
 
+    def _powershell_exe(self) -> str:
+        """看门狗的 PowerShell 入口（P6-2）。
+
+        **为什么要有这个方法**：`install_watchdog_hook` / `run_watchdog_once` 原来直接写死
+        `"powershell.exe"`。在 Linux/macOS 上那会抛 `FileNotFoundError: powershell.exe`
+        —— 用户看到的是一句"找不到文件"，而不是"这个功能只有 Windows 有"。
+        扫描（`scripts/_find_win_only.py` 那次）显示：仓库里只有这两处是**无平台守卫**的
+        Windows-only 调用，其余（`taskkill` / `msvcrt`）都已经按平台分支。
+
+        这里**不假装支持**非 Windows：看门狗由 PowerShell 脚本 + 计划任务组成，
+        移植它属于另一件事。所以非 Windows 直接给出可行动的错误。
+        """
+        if os.name != "nt":
+            raise RuntimeError(
+                "看门狗钩子只有 Windows 支持：它由 PowerShell 脚本"
+                "（`scripts/battlefield_watchdog.ps1`、`scripts/register_battlefield_watchdog_task.ps1`）"
+                "与计划任务组成。Linux/macOS 上请用系统调度器（cron / systemd timer）"
+                "跑等价的巡检入口。详见 `docs/cross-platform.md`。"
+            )
+        return "powershell.exe"
+
     def install_watchdog_hook(self, root_id: str | None = None) -> dict[str, Any]:
         if self.settings.frozen_mode:
             raise RuntimeError("Codex Battlefield is running in frozen read-only mode")
         selected_root_id = self._selected_watchdog_root_id(root_id)
         register_script = ROOT_DIR / "scripts" / "register_battlefield_watchdog_task.ps1"
         args = [
-            "powershell.exe",
+            self._powershell_exe(),
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
@@ -6942,7 +6963,7 @@ class Orchestrator:
         selected_root_id = self._selected_watchdog_root_id(root_id)
         watchdog_script = ROOT_DIR / "scripts" / "battlefield_watchdog.ps1"
         args = [
-            "powershell.exe",
+            self._powershell_exe(),
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",

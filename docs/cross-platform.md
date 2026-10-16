@@ -77,6 +77,33 @@ L7 是防"修一处、别处长出来"的那条。它带一张**允许清单**�
 
 ## 5. 没做的（如实写下）
 
+### 5.1 还有一处**产品级**的 Windows 假定（不是路径问题）
+
+路径与解释器解析已经跨平台了，但**提示词与看门狗**仍然假定 Windows：
+
+* worker / verifier 的**提示词**里给的是 PowerShell 命令写法
+  （`powershell.exe -NoProfile -Command ...`、`Test-Path -LiteralPath`），
+  在 Linux 上 worker 会被误导到不存在的命令；
+* **看门狗**由 PowerShell 脚本（`scripts/battlefield_watchdog.ps1`）与 **Windows 计划任务**
+  组成，没有 cron / systemd 等价物。
+
+这不是"改几个路径"能解决的，属于**产品级移植**，所以不在 P6-2 里假装完成。
+为了让这件事**可反驳**而不是停留在"我们不知道"，加了
+`api/tests/test_cross_platform_windows_only.py`（静态扫描）：
+
+| 判据 | 查什么 |
+|---|---|
+| W1 | 扫描面本身可信（确实扫到 `taskkill` / `msvcrt`，数量不少于 5） |
+| W2 | **每个** Windows-only 调用点要么在**同一个函数体内**有平台守卫，要么在允许清单里并写清理由 |
+| W3 | 看门狗的两个入口走 `_powershell_exe()`；非 Windows 上抛的是**能行动的错误**（写明"只有 Windows 支持 + 用 cron/systemd"），而不是 `FileNotFoundError` |
+| W4 | 已知的**产品级**边界（提示词、看门狗）写在本文档里 |
+
+扫描第一次跑就抓到两处**无守卫**的 `powershell.exe`（`install_watchdog_hook`、
+`run_watchdog_once`）—— 在 Linux 上用户会看到"找不到文件"，而不是"这个功能只有 Windows 有"。
+已修成显式的 `RuntimeError`（带"用 cron / systemd timer"的行动提示）。
+
+### 5.2 其余未验证的部分
+
 * **没有在 Linux/macOS 上跑过任何东西**。本机没有 Linux、没有 WSL、没有容器运行时的
   可用实例（`docs/container.md` 同理）。所以下面这些**仍然是假设**：
   * `verify_all` 在 Linux 上能跑完（尤其 `api/tests/` 里那些跟平台相关的用例）；
@@ -97,3 +124,17 @@ L7 是防"修一处、别处长出来"的那条。它带一张**允许清单**�
 2. 一台 Linux 机器（或可用容器）跑 `verify_all`，能覆盖 CI 覆盖不到的本机状态差异；
 3. macOS 只能靠别人帮忙：本项目的用户群以 Windows 为主，macOS 分支（`.app` 路径、
    `fcntl`）目前是**照文档写的**，没有实机验证。
+
+### 5.3 判据与变异（这一组自己也被验过）
+
+`api/tests/test_cross_platform_windows_only.py` 的 W1–W4 有四组变异，
+**每一组都先把判据的第一版打回过**：
+
+| 变异 | 第一版判据的结果 | 修法 |
+|---|---|---|
+| 把调用换回裸 `"powershell.exe"` | **照样绿** —— "往上看 30 行"跨过了函数边界，把隔壁函数的守卫当成了自己的 | 改成**在同一个函数体内**看守卫（AST 找所属函数） |
+| 删掉 `taskkill` 的平台分支 | 绿（同上） | 同上 |
+| 守卫里不再抛错 | 绿（同上） | 同上 |
+
+修好之后四组全部能红。**这一节留在这里是因为它比判据本身更有价值**：
+"我在检查什么"和"我以为我在检查什么"经常不是一回事。
