@@ -28,9 +28,10 @@ model_context_window = 128000
 [model_providers.custom]
 name = "Custom OpenAI-compatible provider"
 base_url = "https://api.example.com/v1"
-# "responses"（OpenAI Responses API）或 "chat"（Chat Completions）。
-# 多数第三方网关只支持 "chat" —— 不确定就先试 chat。
-wire_api = "chat"
+# **只有 "responses" 可用**：新版 codex 的 wire_api 已经没有 "chat" 这个取值，
+# 写了它 codex 会整份配置加载失败（实测 `codex doctor` 报 error invalid data），
+# 症状是所有节点一起起不来。细节见 docs/provider-setup.md 陷阱 3.8。
+wire_api = "responses"
 # codex 用这个**环境变量名**取 key，并且只要求它**存在**。
 # 本工具的 runner 在该变量缺失时会自动补一个占位值，所以用不校验 key 的
 # 本地代理时不必真的设它。

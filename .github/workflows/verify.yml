@@ -66,6 +66,7 @@ jobs:
       # 门禁本身：`verify_all.py` 一次跑完下列步骤 ——
       #   文档排版检查 / 后端语法检查 / PowerShell 脚本编码检查 /
       #   仓库静态检查（ruff：api + scripts） / 后端 pytest /
+      #   provider 矩阵配置检查 /
       #   前端测试 / 前端 lint / 前端 build
       # 这些名字是从 `scripts/verify_all.py` 里**逐字**抄的，不是概述：
       # `api/tests/test_ci_workflow.py` 的 W9 会核对它们对得上，
@@ -73,6 +74,10 @@ jobs:
       #
       # **不传 `--real-smoke`** —— CI 里没有 Codex CLI 也没有凭据，真实档必然失败，
       # 而那不是"代码坏了"。同理不传 `--real-recursive-probe`。
+      #
+      # `provider 矩阵配置检查` **不需要凭据也不需要网络**（它只生成隔离 config.toml
+      # 并核对结构），所以它是常驻门禁；CI 上没有 codex 时报告里 `could_load_config`
+      # 记 null（**没查**），不会伪装成通过。
       #
       # `CODEX_BATTLEFIELD_RUNNER=mock` 是**必须**的：`verify_all` 会调
       # `bench_run.py` 之类的脚本，而它们默认读用户的 `runner_mode`。

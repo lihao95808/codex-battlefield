@@ -19,16 +19,23 @@ powershell -File scripts\use_provider.ps1 `
 powershell -File scripts\use_provider.ps1 `
     -BaseUrl "http://127.0.0.1:8080/v1" `
     -EnvKey  "MY_GATEWAY_KEY" `
-    -Model   "my-model" `
-    -WireApi "chat"
+    -Model   "my-model"
 ```
+
+> 用非默认前缀的 `-EnvKey`（如 `MY_GATEWAY_KEY`）时，还得把该前缀加进子进程环境的放行名单，
+> 否则真实凭据会被收窄过滤掉、只剩一个占位值：见 `docs/provider-matrix.md` §2.1。
 
 脚本会：
 
 1. 生成隔离 `config.toml`（已存在则保留，`-Force` 覆盖）。**落点由 `state_paths.py` 决定**：
    绑定了工程就是 `<状态根>/projects/<key>/codex-home/`，未绑定才回退 `workspace/codex-home/`；
-2. 导出下面这几个环境变量（**仅当前 shell 生效**）；
+   `-CodexHome <目录>` 可以显式指定落点（**只给自动化用**：`scripts/verify_provider_matrix.py`
+   靠它在一台机器上同时生成三类端点的配置而互不覆盖）；
+2. 导出下面这几个环境变量（**仅当前 shell 生效**）。`-NoEnv` 会跳过这一步，一个变量都不碰；
 3. 打印最终用的模型与端点，便于核对。
+
+> `env_key` 指名的变量**只在它不存在时才写入**。之前是无条件覆盖 —— 那会把用户 shell 里
+> 已有的真实凭据悄悄换成占位值，而且没有任何提示。
 
 | 环境变量 | 值 | 说明 |
 |---|---|---|
@@ -59,7 +66,7 @@ model_context_window = 128000
 [model_providers.custom]
 name = "Custom OpenAI-compatible provider"
 base_url = "https://api.example.com/v1"
-wire_api = "chat"          # "responses" 或 "chat"；多数第三方网关只支持 chat
+wire_api = "responses"     # **只有这一个取值可用**，见陷阱 3.8
 env_key = "OPENAI_API_KEY" # codex 只要求这个变量**存在**
 ```
 
@@ -140,6 +147,38 @@ codex 内置模型注册表里没有第三方模型名，属装饰性警告，�
 
 本地代理类端点在进程关闭后即不可用。写作 `use_provider.ps1` 之外的东西做健康检查
 时，记得**告警但不拦流程**：配置已就绪是事实，端点没起是另一件事。
+
+### 3.8 `wire_api = "chat"` 会让**整份配置加载失败**（新版 codex 已移除该取值）
+
+**现象**：配置里只要出现 `wire_api = "chat"`（哪怕这个 provider 根本没被用到），
+codex 就报配置加载不了：
+
+```
+Codex Doctor v0.162.1 · windows-x86_64
+  ✗ config       config could not be loaded
+        error                    invalid data
+```
+
+**根因**：新版 codex 的 `wire_api` 已经没有 `chat` 这个取值了。Rust 反序列化失败，
+错误信息被压成 `invalid data`，**指不到是哪一行**。后果是所有节点一起起不来，
+而日志里没有线索。
+
+**实测对照**（同一份 `config.toml`，只改这一个键）：
+
+| `wire_api` | `codex doctor` |
+|---|---|
+| `chat` | `✗ config could not be loaded`（`error invalid data`） |
+| `responses` | 配置加载通过 |
+| 不写这个键 | 配置加载通过（用 provider 默认） |
+
+上游记录：[openai/codex#41816](https://github.com/openai/codex/issues/41816)。
+
+**修复**：`use_provider.ps1` / `use_local_proxy.ps1` 的默认值都已改成 `responses`；
+显式传 `-WireApi chat` 会打印警告。真要用只支持 Chat Completions 的端点，只能装
+0.80 那一档的旧 codex（[阿里云文档](https://help.aliyun.com/zh/model-studio/codex#4) 同口径）。
+
+**顺便**：`base_url` / `env_key` / `model` 三类端点的完整对照表见
+`docs/provider-matrix.md`，其中也写了"哪些是实测的、哪些没验"。
 
 ## 4. 验证
 

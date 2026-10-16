@@ -8,12 +8,17 @@
     [string]$Model = "gpt-5-codex",
     [string]$ProviderId = "localproxy",
     [string]$ProviderName = "Local OpenAI-compatible proxy",
-    [ValidateSet("responses", "chat")][string]$WireApi = "chat",
+    # 与 use_provider.ps1 保持一致：新版 codex 只认 `responses`，
+    # `chat` 会让整份配置加载失败。要用 chat 必须显式传，并且得配旧版 codex。
+    [ValidateSet("responses", "chat")][string]$WireApi = "responses",
     [string]$ReasoningEffort = "medium",
     [int]$ContextWindow = 128000,
     # 某些主机上 codex 的 Windows 受限令牌建不起来（报 CreateProcessAsUserW failed: 5），
     # 需要显式降级。留空 = 不写 [windows] 段。
     [string]$WindowsSandbox = "",
+    # 显式落点 / 只写文件：透传给 use_provider.ps1，给离线验证用。
+    [string]$CodexHome = "",
+    [switch]$NoEnv,
     # 可选：代理把实际监听端口写在这里（可能因端口占用而换号）。
     [string]$PortFile = "",
     [switch]$Force
@@ -39,7 +44,14 @@ if ($PortFile -and (Test-Path $PortFile)) {
     -ReasoningEffort $ReasoningEffort `
     -ContextWindow $ContextWindow `
     -WindowsSandbox $WindowsSandbox `
+    -CodexHome $CodexHome `
+    -NoEnv:$NoEnv `
     -Force:$Force
+
+if ($NoEnv) {
+    # 只写文件模式：后面那句健康探测也不该跑（自动化只想要配置内容）。
+    exit 0
+}
 
 # 尽力探一下健康检查，**不拦流程**：这个脚本的职责是写配置，
 # 探不到只说明代理没起，不影响"配置已经就绪"这个事实。

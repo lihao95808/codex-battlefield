@@ -175,6 +175,15 @@ def main() -> None:
     run_step("仓库静态检查（ruff：api + scripts）", lint_command(), ROOT)
     run_step("后端 pytest", [sys.executable, "-m", "pytest"], ROOT / "api")
 
+    # provider 矩阵：三类端点各生成一份隔离配置，逐项验"codex 读不读得进去"。
+    # **不发任何模型请求**，所以能进 CI（要花凭据的那条是 `verify_provider_planner.py`，
+    # 只在 `--real-*` 档里跑）。失效方向：**阻断** —— 配置写错的症状是所有节点一起起不来。
+    run_step(
+        "provider 矩阵配置检查",
+        [sys.executable, str(ROOT / "scripts" / "verify_provider_matrix.py"), "--quiet"],
+        ROOT,
+    )
+
     pnpm = shutil.which("pnpm")
     if pnpm is None:
         raise SystemExit("找不到 pnpm，无法运行前端验证。")

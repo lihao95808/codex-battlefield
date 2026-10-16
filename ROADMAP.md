@@ -144,7 +144,7 @@ P6 兼容      ── 跨平台 / 跨模型 / 容器    （解锁"谁都能部�
 | P6-3 | CI：GitHub Actions 跑 `verify_all`（Windows + Linux 双平台） | PR 上可见；挡住"只有本机能过"的提交。**已落地**：`.github/workflows/verify.yml`（ubuntu + windows，`fail-fast: false`，跑同一套 `verify_all.py`，显式 `RUNNER=mock`，失败收集诊断）+ 15 例判据（含**工作流与 `verify_all` 步骤逐字同步**这条防分叉的检查）。**未验证**：本机没有 Linux，也没有触发 Actions 的手段 —— "CI 会绿"这句没有证据 |
 | P6-2 | Linux/macOS 支持：脚本与路径判断去 Windows 假设 | 仓库脚本在 Linux 跑通核心路径；`verify_all` 在 Linux CI 绿。**未做**：本机无 WSL/Linux，只能靠 P6-3 的 CI 来发现要改哪里 —— 本次只交付了"能发现问题的机制" |
 | P6-4 | 弱模型/异构模型可用性：小模型跑 worker 的成功率与降级策略 | 给出"哪些档位能用便宜模型"的**实测**结论，含失败模式 |
-| P6-5 | provider 矩阵：官方 / 自建网关 / 本地推理（Ollama 类） | 每种都有可复制的配置与验证脚本（`verify_provider_planner.py` 已通用） |
+| P6-5 | provider 矩阵：官方 / 自建网关 / 本地推理（Ollama 类） | 每种都有可复制的配置与验证脚本（`verify_provider_planner.py` 已通用）。**部分落地**：`docs/provider-matrix.md`（三类端点的可复制配置 + 判据 + 验证边界）+ `scripts/verify_provider_matrix.py`（离线生成三份隔离配置并逐项验结构，**不发任何请求**，已进 `verify_all` 与 CI）+ 25 例判据（含 M5 系列的坏配置变异、M10 的 `env_key` 放行名单双向验证）。**顺手修掉一条真实缺陷**：两个脚本原来默认 `wire_api = "chat"`，而新版 codex 已移除该取值 —— 实测 `codex doctor` 报 `config could not be loaded / error invalid data`，症状是**所有节点一起起不来**且日志无线索（上游 openai/codex#41816）；默认值已改成 `responses`，显式传 `chat` 会告警。**未验证**：三类端点的**真实可达性与鉴权**——本机没有凭据、也不打算花钱，所以"某端点能跑通 planner"这句没有证据，只能由使用者在自己环境跑 `verify_provider_planner.py` |
 
 **工作量估计**：3–6 周。
 **风险**：容器里跑 agent 改代码涉及挂载与权限，容易做成"能跑但不安全"。对策：默认最小权限，危险模式要显式开启并在界面标注。
