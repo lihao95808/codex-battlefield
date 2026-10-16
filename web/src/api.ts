@@ -2,6 +2,7 @@ import type {
   ApiRestartDrainResponse,
   BudgetGuardResponse,
   ConstitutionResponse,
+  CostReport,
   CrossProjectResponse,
   ObligationIndexBoard,
   RunArtifactResponse,
@@ -192,6 +193,28 @@ export async function saveSettings(
       detail = await response.text();
     }
     throw new Error(detail || '保存失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 花费归因与成本预测（P3-3 / P3-2）。
+ *
+ * `rootId` 省略时后端用最近更新的那棵树 —— 界面不必先问一次树。
+ * 预测在样本不足时会带 `available: false` + 原因回来，**不是** 0。
+ */
+export async function fetchCost(rootId?: string): Promise<CostReport> {
+  const query = rootId ? `?root_id=${encodeURIComponent(rootId)}` : '';
+  const response = await fetch(`/api/cost${query}`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? '';
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || '花费读取失败：' + response.status);
   }
   return response.json();
 }

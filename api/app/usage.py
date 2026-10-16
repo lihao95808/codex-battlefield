@@ -30,6 +30,12 @@ _FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
 
 CURRENCY_FIELD_CANDIDATES = ("currency", "cost_currency", "currency_code")
 
+# 模型名的候选键。**按身份记录，不做映射**：这里只回答"这条用量是哪个模型花的"，
+# 谁强谁弱、哪个档该配哪个模型属于配置与策略，不由本模块判断。
+_MODEL_FIELD_CANDIDATES = ("model", "model_name", "model_id", "model_slug")
+# 模型名可能被放在这些容器里（网关常把自己的账单对象套一层）。
+_MODEL_CONTAINER_KEYS = ("gateway", "billing", "provider", "metadata", "request", "model_info")
+
 # 已知的嵌套容器：token 常放在这些键下，金额常放在这些键下的 `cost` 里。
 _TOKEN_CONTAINER_KEYS = ("usage", "token_usage")
 # 只用**通用**容器名。某家网关的历史字段名不该进业务代码：
@@ -64,6 +70,34 @@ def _as_float(value: Any) -> float | None:
             return float(value.strip())
         except ValueError:
             return None
+    return None
+
+
+def _model_of(payload: Mapping[str, Any]) -> str | None:
+    """从任意形状里取模型名。**取不到就返回 None，绝不填 "unknown"。**
+
+    为什么不填占位串：占位串会变成一个真实的桶，于是"47% 的花费属于模型
+    unknown"看起来像一个统计结论，而真相是"这些运行没记录模型"。
+    上层要报的是后者（`runs_unknown_model`），不是一个假的模型名。
+    """
+    for key in _MODEL_FIELD_CANDIDATES:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key in _MODEL_CONTAINER_KEYS:
+        container = payload.get(key)
+        if not isinstance(container, Mapping):
+            continue
+        for name in _MODEL_FIELD_CANDIDATES:
+            value = container.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    nested = payload.get("model_info")
+    if isinstance(nested, Mapping):
+        for name in _MODEL_FIELD_CANDIDATES:
+            value = nested.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return None
 
 
@@ -191,6 +225,9 @@ def normalize_usage(raw: Any) -> dict[str, Any] | None:
     cost = _cost_of(raw)
     if cost is not None:
         normalized["cost"] = cost
+    model = _model_of(view) or _model_of(raw)
+    if model is not None:
+        normalized["model"] = model
     normalized["raw"] = dict(raw)
     return normalized
 

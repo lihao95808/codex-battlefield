@@ -649,3 +649,59 @@ export interface CrossProjectResponse {
   totals: CrossProjectTotals;
   notes: string[];
 }
+
+/** 归因里的一个桶（节点 / 角色 / 模型各一套）。 */
+export interface CostBucket {
+  key: string;
+  runs: number;
+  total_tokens: number;
+  /** 没有金额时是 null —— 不是 0。 */
+  cost_by_currency: Record<string, number> | null;
+  /** 只有节点桶有。 */
+  title?: string;
+  depth?: number | null;
+}
+
+export interface CostAttribution {
+  runs: number;
+  runs_with_usage: number;
+  /** 有运行但一条用量都识别不出来（多半是供应商换了字段名）。 */
+  runs_without_usage: number;
+  runs_unknown_model: number;
+  total_tokens: number;
+  cost_by_currency: Record<string, number> | null;
+  by_kind: CostBucket[];
+  by_model: CostBucket[];
+  by_node: CostBucket[];
+}
+
+export interface CostProjection {
+  available: boolean;
+  /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */
+  reason: string;
+  currency: string | null;
+  unit_cost?: number;
+  settled_cost?: number;
+  settled_nodes?: number;
+  remaining_nodes?: number;
+  low?: number;
+  mid?: number;
+  high?: number;
+  sample_nodes?: number;
+  retry_factor?: number;
+  note?: string;
+}
+
+/** `GET /api/cost` 的响应。 */
+export interface CostReport {
+  root_id: string;
+  attribution: CostAttribution;
+  projection: CostProjection;
+  node_counts: {
+    total: number;
+    settled: number;
+    priced_samples: number;
+    remaining: number;
+  };
+  note: string;
+}

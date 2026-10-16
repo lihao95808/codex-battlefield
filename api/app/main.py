@@ -14,9 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import (
+    cost as cost_mod,
     cross_project,
     diagnostics as diagnostics_mod,
     project_store,
@@ -32,7 +34,7 @@ from . import steward_alerts as steward_alerts_mod
 from .config import ROOT_DIR, machine_path_of
 from .database import SessionLocal, get_db, init_db
 from .events import event_bus
-from .models import ConstitutionRecord, StewardAction, TaskStatus
+from .models import ConstitutionRecord, StewardAction, TaskNode, TaskStatus
 from .orchestrator import orchestrator
 from .runner import make_runner
 from .project_store import (
@@ -427,6 +429,25 @@ def cross_project_overview() -> dict:
     "总览坏了"，而用户需要的恰恰是"哪一个坏了"。
     """
     return cross_project.cross_project(orchestrator.settings)
+
+
+@app.get("/api/cost")
+def get_cost(
+    root_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """**花费归因 + 成本预测**（P3-3 / P3-2）。
+
+    归因按节点 / 角色 / 模型三维拆；预测按"已完成节点的实际花费 × 剩余节点数"
+    给一个区间。**只读**，不做任何拦截 —— 硬闸在 `/api/budget-guard`，
+    两者口径不同且有意保持不同（一个管"还能发几次车"，一个管"一共花了多少"）。
+
+    样本不足时预测会明确返回 `available: false` + 原因，而不是给一个凭空的数字。
+    """
+    resolved = root_id or _latest_root_id(db)
+    if not resolved:
+        raise HTTPException(status_code=404, detail="还没有任何任务树，没有可归因的花费。")
+    return cost_mod.cost_report(db, resolved)
 
 
 @app.post("/api/state/migrate")
@@ -894,6 +915,21 @@ async def steward_alerts_stream() -> StreamingResponse:
 def _ensure_mutable() -> None:
     if orchestrator.settings.frozen_mode:
         raise HTTPException(status_code=423, detail="Codex Battlefield is running in frozen read-only mode")
+
+
+def _latest_root_id(db: Session) -> str | None:
+    """最近更新的那棵树的根节点 id。没有树时返回 `None`。
+
+    为什么按 `updated_at` 而不是创建时间：用户问"花了多少"时指的是**正在关心的那棵**，
+    而它几乎总是最近动过的那棵。没有这个默认值时，界面每次都要先问一次树才能归因。
+    """
+    row = db.execute(
+        select(TaskNode.id)
+        .where(TaskNode.parent_id.is_(None))
+        .order_by(TaskNode.updated_at.desc())
+        .limit(1)
+    ).first()
+    return str(row[0]) if row else None
 
 
 def _ensure_steward_mutable() -> None:
