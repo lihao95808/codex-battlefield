@@ -6,7 +6,8 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件）。
 **文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的提交：公开仓 `86bd25e8a1c1af6e1067a559db0ca5194bc9fe47`；内部仓 `c1adc3edc01a86963e6df2188238667a2bcdde13`；本地 HEAD `86bd25e`。
+审计时的提交：公开仓 `1ffb997780dafc10bcf032f022a388369680f1f3`；内部仓 `bc0633d042aaa5d07addce5badb556bc76451bd2`；本地 HEAD `1ffb997`。
+（本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 ## 1. 逐条对照
 
@@ -18,7 +19,7 @@
 | P2-4 | 已落地 | `api/tests/test_diagnostics.py`（脱敏 + 非空壳） |
 | P2-5 | 已落地 | `api/tests/test_state_admin.py`（迁移先预演、重置要抄 key） |
 | P2-6 | 已落地 | `web/src/i18n.test.ts` + `i18n.detect.test.ts`（32 例，逐条变异过） |
-| P3-1 | 已落地 | `api/tests/` 的预算硬闸用例 + `api/tests/test_settings_panel.py`（额度项） |
+| P3-1 | 已落地 | `api/tests/` 的预算硬闸用例 + `test_settings_panel.py`（额度项） |
 | P3-2 | 已落地 | `api/tests/test_cost.py`（区间而不是单值；样本不足拒绝给数） |
 | P3-3 | 已落地 | `api/tests/test_cost.py`（三维归因；取不到模型名不造假桶） |
 | P3-4 | 已落地 | `api/tests/test_cross_project.py`（按币种分桶、读不到≠0） |
@@ -35,11 +36,11 @@
 | P5-4 | 已落地 | `api/tests/test_retention.py`（清理后仍能还原） |
 | P5-5 | 已落地 | `api/tests/test_trace_correlation.py`（10 例 + 四组变异） |
 | P5-6 | 已落地 | `api/tests/test_crash_injection.py`（每个写入阶段硬杀一次） |
-| P6-1 | 部分落地 | `api/tests/test_container.py`（21 例，含每个 COPY 源存在） |
-| P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例，平台是参数） |
+| P6-1 | 部分落地 | `api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽） |
+| P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4） |
 | P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（15 例，含步骤名逐字同步） |
 | P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵） |
-| P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例，离线结构核对）+ `test_provider_wire_format.py`（F1–F4：本机假网关 + 真实 Codex CLI 试出端点契约） |
+| P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例）+ `test_provider_wire_format.py`（F1–F4：假网关 + 真实 CLI 试出端点契约） |
 
 ## 2. 缺口清单（**没有证据的部分**）
 
@@ -49,16 +50,16 @@
 | 交付物 | 缺什么 |
 |---|---|
 | P5-2 | 长列表虚拟化已做；**“千节点首屏 < 2s”仍未量**（E2E 验的是接缝不是耗时） |
-| P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过 |
-| P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西 |
-| P6-3 | 本机**没有触发 Actions 的手段**，CI 没有一次真实绿灯记录 |
+| P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过） |
+| P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
+| P6-3 | 本机**没有触发 Actions 的手段**，CI 没有一次真实绿灯记录（工作流结构已用 W1–W9 验过） |
 | P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
 | P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**（F1–F4：必须支持 SSE 流式 + `response.output_item.done`） |
 
 ## 3. 双仓状态
 
-* 公开仓：`86bd25e8a1c1af6e1067a559db0ca5194bc9fe47`（`origin/main`）
-* 内部仓：`c1adc3edc01a86963e6df2188238667a2bcdde13`（`internal/main`）
+* 公开仓：`1ffb997780dafc10bcf032f022a388369680f1f3`（`origin/main`）
+* 内部仓：`bc0633d042aaa5d07addce5badb556bc76451bd2`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：
   `BRANCH-codemaker-hub.md`、`api/app/config.py`、`api/tests/test_node_home_config_seed.py`、
   `docs/codemaker-hub-provider.md`、`scripts/codemaker-hub.codex.toml`、
@@ -68,11 +69,13 @@
 ## 4. 结论
 
 **P2–P5 的交付物都有判据，且判据在 `verify_all` 里跑。** P6 的五条里，
-三条（容器化 / 跨平台 / CI）**结构已落地但无法在本机实测**，一条（弱模型）
-只到 planner 粒度，一条（provider 矩阵）缺真实端点验证。
+三条（容器化 / 跨平台 / CI）**结构无法在本机实测**（但语法、平台分派、工作流结构都已静态验过），
+一条（弱模型）只到 planner 粒度，一条（provider 矩阵）缺真实端点的可达性与鉴权
+（**端点契约**已用本机假网关实测）。
 
 所以整体目标**不标记完成**：缺口是**环境**造成的（没有 Docker、没有 Linux、
-没有 CI 触发手段、没有真实端点凭据），不是实现没写。补上它们的成本按信息量排序：
+没有 CI 触发手段、没有真实端点凭据、没有真实模型额度），不是实现没写。
+补上它们的成本按信息量排序：
 
 1. **让双平台 CI 真跑一次** —— 能把 P6-2 与 P6-3 的一半假设变成事实或反例，成本几乎为零；
 2. 一台有 Docker 的机器跑 `docker compose up` —— 验 P6-1 的“界面可用”；

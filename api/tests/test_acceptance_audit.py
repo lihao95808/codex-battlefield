@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -245,3 +246,42 @@ def test_q5_audit_records_the_two_remote_tips():
     audit = AUDIT.read_text(encoding="utf-8")
     assert re.search(r"公开仓[^\n]*`[0-9a-f]{7,40}`", audit), "审计里要写公开仓的具体提交"
     assert "内部仓" in audit, "审计里要写内部仓的状态"
+
+
+# --- Q6 审计文档必须与生成器一致（防止"过期的安全感"） -----------------------
+
+
+def test_q6_audit_is_in_sync_with_its_generator(tmp_path):
+    """审计文档必须是 `scripts/gen_acceptance_audit.py` 的**当前输出**。
+
+    为什么这条重要：审计里写着两个远端 tip、每条交付物的状态与判据文件。手改一次之后
+    它就会**慢慢过期**，而过期的审计比没有审计更坏 —— 它给的是过期的安全感。
+    生成器带 `--check`，这里直接调它做比对（同一个真相，不抄第二份逻辑）。
+    """
+
+    generator = REPO / "scripts" / "gen_acceptance_audit.py"
+    assert generator.is_file(), "生成器不见了 —— 那审计就只能手改，必然过期"
+    proc = subprocess.run(
+        [sys.executable, str(generator), "--check"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        "审计文档与生成器的输出不一致（过期了）。"
+        f"跑 `python scripts/gen_acceptance_audit.py` 重新生成。输出：{proc.stdout.strip()}"
+    )
+
+
+def test_q6_generator_declares_a_judgement_for_every_deliverable():
+    """生成器里的"判据在哪"这张表要覆盖所有交付物 —— 缺一条就会印出"（未登记）"。"""
+
+    source = (REPO / "scripts" / "gen_acceptance_audit.py").read_text(encoding="utf-8")
+    missing = [item for item, _line in target_rows() if f'"{item}":' not in source]
+    assert missing == [], f"生成器的 JUDGEMENTS 里缺这些交付物：{missing}"
+
+    audit = AUDIT.read_text(encoding="utf-8")
+    assert "（未登记）" not in audit, "审计里有未登记的交付物"
