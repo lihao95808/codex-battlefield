@@ -144,10 +144,18 @@ if ($Force -or -not (Test-Path $venvPython)) {
 }
 
 Write-Host "[2/3] 安装 Python 依赖（含 dev）" -ForegroundColor Cyan
-& $venvPython -m pip install -q -U pip
-if ($LASTEXITCODE -ne 0) { Write-Host "升级 pip 失败" -ForegroundColor Red; exit 1 }
-& $venvPython -m pip install -q -e ".[dev]"
-if ($LASTEXITCODE -ne 0) { Write-Host "安装 Python 依赖失败" -ForegroundColor Red; exit 1 }
+# **必须在 api/ 下跑 pip**：`pyproject.toml` 在那儿。从仓库根跑会报
+# "does not appear to be a Python project" —— 而且那句话不会告诉你路径错了，
+# 只说"这里不是 Python 项目"。实测踩到，这正是"一条命令装好"最容易断的地方。
+Push-Location $apiDir
+try {
+    & $venvPython -m pip install -q -U pip
+    if ($LASTEXITCODE -ne 0) { Write-Host "升级 pip 失败" -ForegroundColor Red; exit 1 }
+    & $venvPython -m pip install -q -e ".[dev]"
+    if ($LASTEXITCODE -ne 0) { Write-Host "安装 Python 依赖失败" -ForegroundColor Red; exit 1 }
+} finally {
+    Pop-Location
+}
 
 if ($SkipWeb) {
     Write-Host "[3/3] 按要求跳过 Web 依赖（-SkipWeb）" -ForegroundColor DarkGray
