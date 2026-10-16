@@ -25,14 +25,16 @@ jobs:
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # `timeout-minutes` **不是为了省时间，是为了让失败可诊断**：
-    # ubuntu 侧已经三次在「跑 verify_all」里以 45–46 分钟被 runner 掐掉 ——
-    # API 给的注解原文是"The hosted runner lost communication with the server.
-    # Anything in your workflow that terminates the runner process, starves it for
-    # CPU/Memory, or blocks its network access can cause this error."，
-    # 而**步骤没有结论、日志 404**：等于什么都不知道。
-    # 设了上限之后，超时会变成一次**正常的失败**（有结论、有日志、有 pytest 进度）。
-    # 30 分钟的依据：Windows 侧全绿那次用了 18.5 分钟。
-    timeout-minutes: 30
+    # ubuntu 侧曾经几次在「跑 verify_all」里跑到没有结论、日志 404 ——
+    # 加上限之后 check-run 注解第一次给出了一句能追的话：
+    # `The job has exceeded the maximum execution time of 30m0s`（作业 20:58:01 开始，
+    # 30 分钟没跑完，`跑 verify_all` 全程 in_progress）。
+    # 也就是说 **Linux 侧的问题是"跑不完"，不是"跑错"**：同一套门禁 Windows 侧 15–18 分钟
+    # （其中 pytest 7.6–9 分钟），而这台 2 vCPU 的私有仓 runner 上 30 分钟不够。
+    # 所以现在把预算设成 **45 分钟**（Windows 侧的 18 分钟远低于它，两个平台共用矩阵值）。
+    # 45 不是"把失败推后"的随意数字：30 已实测不够，再加 50% 余量；
+    # 判据 `api/tests/test_ci_workflow.py::test_w12_...` 会钉住"必须设且不超过 60"。
+    timeout-minutes: 45
     strategy:
       # 一个平台失败时**不取消另一个**：两边的失败原因常常不同，
       # 而"只看到一边红了"会让人以为另一边是好的。

@@ -268,8 +268,12 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
   只要 15–18 分钟，其中 pytest 7.6–9 分钟；本机 pytest 1.8 分钟）。
   之前几次"runner lost communication"是同一条根因的另一种表现（跑太久被杀）。
   加超时的价值就在这里：把"无声消失"变成**一条能引用的话**。
-  下一步（下一轮的第一件事）：让 Linux 上的门禁**跑得完** —— 分片/并行度/把 E2E 与规模用例
-  拆成独立作业都是候选；单纯把超时调大只是把失败推后。
+
+  **处置**：把作业预算设成 **45 分钟**（30 已实测不够 + 50% 余量；Windows 侧 18 分钟远低于它）。
+  这不是"把失败推后"——它把一次**未知**（30 分钟不够、不知道要多久）变成一次**可判定**：
+  要么在 45 分钟内绿，要么再超时（那就说明有测试真的卡住，而不是单纯慢）。
+  进一步压缩 Linux 时间的方向仍留着：把最慢的多进程用例（godot 队列仲裁、千节点夹具）
+  的等待窗口收窄，或把 web/E2E 拆成独立作业。
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
   E2E 步 1 failed / 6 passed）—— 2 vCPU 的 runner 上首屏走不完 180 秒。判据因此在 `process.env.CI`

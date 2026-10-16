@@ -78,9 +78,11 @@ GAP_REASONS: dict[str, str] = {
     "P6-2": "本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过）",
     "P6-3": "**Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），"
     "绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。"
-    "**Linux 侧仍无完整记录**：作业在「跑 verify_all」里 45–46 分钟后以 runner 掉线告终"
-    "（注解原文见 `docs/ci.md` §9.2），步骤无结论、日志 404 —— 连“跑到哪个用例”都不知道；"
-    "本轮已加 `timeout-minutes: 30` 让下次失败可诊断（W12）。"
+    "**Linux 侧仍无完整记录**，但**原因查清了**：加法诊断用的 `timeout-minutes: 30` 之后，"
+    "check-run 注解原文是 `The job has exceeded the maximum execution time of 30m0s` —— "
+    "**是“跑不完”而不是“跑错”**（同一套门禁 Windows 侧 15–18 分钟、pytest 7.6–9 分钟；"
+    "本机 pytest 1.8 分钟）。本轮把预算设成 **45 分钟**（30 已实测不够 + 50% 余量，W12 钉住"
+    "“必须设且不超过 60”）：要么 45 分钟内绿，要么仍在超时。"
     "另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了",
     "P6-4": "只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测",
     "P6-5": "三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**"
