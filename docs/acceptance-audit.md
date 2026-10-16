@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `196a488a7549a87c2b05283326dd7ff46ff6f724`、内部仓 `91e83972b91295a138eee6499127c98038196343`。
+审计时的两个远端 tip：公开仓 `2278832ec362bf747e155032c133e82ee37d4e08`、内部仓 `73ef563afc875db8f13bfa42dfea5d5cea6a47eb`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -62,13 +62,16 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`196a488a7549a87c2b05283326dd7ff46ff6f724`（`origin/main`）
-* 内部仓：`91e83972b91295a138eee6499127c98038196343`（`internal/main`）
-* 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：
-  `BRANCH-codemaker-hub.md`、`api/app/config.py`、`api/tests/test_node_home_config_seed.py`、
-  `docs/codemaker-hub-provider.md`、`scripts/codemaker-hub.codex.toml`、
-  `scripts/use_codemaker_hub.ps1`、`scripts/verify_codemaker_hub_planner.py`。
-  多一个少一个都说明同步出了问题（Q5 会红）。
+* 公开仓：`2278832ec362bf747e155032c133e82ee37d4e08`（`origin/main`）
+* 内部仓：`73ef563afc875db8f13bfa42dfea5d5cea6a47eb`（`internal/main`）
+* 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
+  文件（内部仓改写了它们），另外 5 个只存在于内部仓。
+  多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。
+
+> **这里刻意不列出那 5 个内部文件的名字。** 本文件会提交到公开仓，而它们的名字就是
+> 内部标识；第一版把 7 个名字全列了出来，等于亲手把内部标识推上公开仓
+> （`scripts/check_public_tree.py` 的私有词表会命中）。要核对名字请跑 Q5 或
+> `git diff --name-status origin/main internal/main` —— 运行输出不属于公开树。
 
 ## 4. 结论
 

@@ -79,7 +79,11 @@ def test_godot_slot_capacity_limits_concurrency(tmp_path: Path) -> None:
         {
             "GW_PATH": str(wrapper_script),
             "HOLDER_LOG": str(log_path),
-            "HOLD_SECONDS": "1",
+            # 持有时长要**明显长于**采样循环之外的调度抖动：`-n auto` 下整机被抢 CPU 时，
+            # 1 秒的窗口会在"进程都跑完了"和"状态文件被采到"之间输掉 —— 实测这一条
+            # 因此在一次完整门禁里偶发失败（同一条用例单独跑全绿）。5 秒仍然是个短测试，
+            # 但它不再和调度器赌运气。
+            "HOLD_SECONDS": "5",
             "CODEX_BATTLEFIELD_GODOT_LOCK_PATH": str(tmp_path / "godot.lock"),
             "CODEX_BATTLEFIELD_GODOT_STATE_PATH": str(state_path),
             "CODEX_BATTLEFIELD_GODOT_MAX_CONCURRENCY": str(capacity),
@@ -99,12 +103,22 @@ def test_godot_slot_capacity_limits_concurrency(tmp_path: Path) -> None:
     ]
 
     observed_state: dict | None = None
+    read_errors = 0
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         if state_path.exists():
             try:
                 snapshot = json.loads(state_path.read_text(encoding="utf-8"))
             except ValueError:
+                snapshot = None
+            except OSError:
+                # 采样点撞上写窗口，不是被测行为坏了：Windows 上写者 `os.replace` 换名的那一瞬间，
+                # 读者会吃到 `PermissionError: [Errno 13]`（目标文件处于"待替换"状态）。
+                # 产品的读者 `_may_attempt_now` 对同一个错误是**放行**的，并有单独判据钉住
+                # （test_godot_queue_priority.py::test_may_attempt_now_fails_open_when_state_file_is_unreadable）。
+                # 所以这里继续采样；20 秒内一直采不到仍然会红，失败信息里带上错误次数，
+                # 免得"文件一直读不了"被这个 except 吞成"只是没采到"。
+                read_errors += 1
                 snapshot = None
             if snapshot and snapshot.get("holders"):
                 observed_state = snapshot
@@ -132,7 +146,7 @@ def test_godot_slot_capacity_limits_concurrency(tmp_path: Path) -> None:
     assert _max_concurrency(events) <= capacity, events
 
     # Queue visibility: while slots were contended, holders and waiters must be observable.
-    assert observed_state is not None, "queue state file never reported holders"
+    assert observed_state is not None, f"queue state file never reported holders (read_errors={read_errors})"
     assert observed_state["capacity"] == capacity
     assert len(observed_state["holders"]) <= capacity
 

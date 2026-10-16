@@ -15,10 +15,16 @@ from app import diagnostics
 
 
 def test_redact_masks_values_but_keeps_names() -> None:
-    """名字留着（要看"有没有配"），值抹掉。"""
-    out = diagnostics.redact('CMHUB_9CA735782AC72426_API_KEY = "hub-local-value"')
+    """名字留着（要看"有没有配"），值抹掉。
+
+    ⚠️ 判据里的名字必须用**中性**样张：这里曾经写的是一个内部网关的真实前缀 +
+    真实 hex 后缀。它看着像"随便举的例子"，实际上把内部标识发到了公开仓
+    （`scripts/check_public_tree.py` 的词表会命中，见 `docs/public-tree-hygiene.md` §1）。
+    判据要的是"名字里带 key/token 就脱敏"这个**形状**，不是那个具体名字。
+    """
+    out = diagnostics.redact('MY_GATEWAY_9CA735782AC72426_API_KEY = "hub-local-value"')
     assert "hub-local-value" not in out
-    assert "CMHUB_9CA735782AC72426_API_KEY" in out
+    assert "MY_GATEWAY_9CA735782AC72426_API_KEY" in out
     assert "***REDACTED***" in out
 
 

@@ -224,7 +224,13 @@ def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
 
 
 def test_q5_internal_overlay_is_exactly_seven_files():
-    """内部仓 = 公开仓 + 7 个 overlay 文件（`BRANCH-codemaker-hub.md` 里写着这件事）。
+    """内部仓 = 公开仓 + 7 个 overlay 文件（这件事写在**内部仓**的根文件里）。
+
+    ⚠️ 这里刻意**不写那 7 个文件名**：本文件是公开树的一部分，而其中 5 个 overlay
+    是只在内部仓存在的文件，名字本身就带内部标识 —— 写进公开仓就是泄漏
+    （第一版审计正是这么写的，`scripts/gen_acceptance_audit.py` 与生成的
+    `docs/acceptance-audit.md` 都把名字列了出来；见 `docs/public-tree-hygiene.md`）。
+    要看到具体名字，失败信息里会打出来（`changed`），运行日志不属于公开树。
 
     没有远端引用时**跳过**（而不是假装通过）：这台机器上没配 `internal` remote 的克隆
     不该因为这条变红。
@@ -238,6 +244,13 @@ def test_q5_internal_overlay_is_exactly_seven_files():
         pytest.skip("拿不到 origin/main 与 internal/main 的差异")
     changed = [line for line in diff.stdout.splitlines() if line.strip()]
     assert len(changed) == 7, f"内部仓差异应当是 7 个文件，实际 {len(changed)}：{changed}"
+    # 审计里写的是"5 个只存在于内部仓、2 个是公开树里也有的（被改写了）"。
+    # 把这两个数字也钉住：只钉总数的话，有人把一个"新增"改成"改写"（或反过来）
+    # 仍然会过，而那句话就成了假的 —— 审计里每一句可核对的陈述都要有判据。
+    added = [line for line in changed if line.startswith("A")]
+    modified = [line for line in changed if line.startswith("M")]
+    assert len(added) == 5, f"只存在于内部仓的应当是 5 个，实际 {len(added)}：{added}"
+    assert len(modified) == 2, f"内部仓改写的公开文件应当是 2 个，实际 {len(modified)}：{modified}"
 
 
 def test_q5_audit_records_the_two_remote_tips():

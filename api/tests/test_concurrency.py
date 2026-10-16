@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
@@ -166,6 +166,50 @@ def test_fuel_state_backlog_sprint_pushes_to_upper() -> None:
     assert state["recommended_target"] == 4
     assert state["queue_pressure"] == 1.0
     assert state["frontier_pressure"] == 1.0
+
+
+def test_fuel_deadline_hour_wraps_at_midnight(monkeypatch) -> None:
+    """加油点"已过"的判定在本地 0 点会翻面 —— 写判据的人必须知道这件事。
+
+    背景：`test_orchestrator.py::test_auto_concurrency_sprints_after_fuel_deadline_when_queue_remains`
+    为了在**任意时刻**都能落到"已过加油点"分支，用 `deadline_hour = now.hour - 1` 现算
+    （旧写法是 `now.hour if now.minute > 0 else (now.hour - 1) % 24`）。问题出在
+    `local_now(00:xx) >= deadline(23:00)` 为假：本地 0 点时"减一小时"绕回前一天 23 点，
+    "已过"分支当天不可达。旧写法只在 `minute == 0` 时才走那条分支，所以那条判据的
+    失败窗口是**每天的头一分钟**（00:00:00–00:00:59）——一分钟的红，比一小时的更难遇到、
+    也更容易被当成偶发。
+
+    这里把两种写法并排钉住：`deadline=23`（旧写法在本地 0 点的取值）落不到 elapsed 分支，
+    `deadline=0` 能落到。判定全走真实生产函数，不复制公式。
+    """
+    monkeypatch.setattr(concurrency, "utcnow", lambda: datetime(2026, 1, 1, 0, 30, tzinfo=timezone.utc))
+    common = dict(
+        queued_work=10,
+        active_frontier=10,
+        active_agents=0,
+        lower=1,
+        upper=13,
+        codex_health={},
+    )
+
+    # 旧写法在本地 0 点算出的 deadline（= 23 点）：还没到，"已过"分支不可达
+    wrapped = concurrency.auto_concurrency_fuel_state(
+        _Settings(auto_concurrency_fuel_deadline_hour=23, auto_concurrency_fuel_timezone_offset_hours=0),
+        **common,
+    )
+    assert wrapped["phase"] != "utilization_sprint"
+    assert wrapped["basis"] != "operator_utilization_deadline_elapsed"
+    assert wrapped["time_pressure"] == 0.0
+
+    # 本地 0 点该有的写法（deadline = 0 点）：已过，落到"已过"分支
+    elapsed = concurrency.auto_concurrency_fuel_state(
+        _Settings(auto_concurrency_fuel_deadline_hour=0, auto_concurrency_fuel_timezone_offset_hours=0),
+        **common,
+    )
+    assert elapsed["phase"] == "utilization_sprint"
+    assert elapsed["basis"] == "operator_utilization_deadline_elapsed"
+    # 上限 13，但前线只有 10 个可跑，所以推荐值被 active_frontier 夹到 10
+    assert elapsed["recommended_target"] == 10
 
 
 def test_decision_manual_mode_overrides_everything() -> None:

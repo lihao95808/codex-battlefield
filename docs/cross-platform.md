@@ -16,7 +16,7 @@ P6-2 在 ROADMAP 里的判据是：**仓库脚本在 Linux 跑通核心路径；
 | `verify_browser_console.py` 的 Chrome/Edge 候选 | 只有 `C:\Program Files\...`，Unix 上一个都命中不了 | 候选按平台给（Unix 用可执行名 + macOS 的 `.app` 路径） |
 | `local_kick_tree.py` 的文件锁 | **已经对了**：`msvcrt` / `fcntl` 按平台分支 | 不动 |
 | `bench_supervise.py` 的 `py-spy.exe` / 符号服务器 | 平台分支已存在，符号服务器本来就是 Windows 专用诊断 | 不动（在允许清单里写明理由） |
-| `scan_history_privacy.py` 的 `C:\Users\...` 正则 | **必须**认识 Windows 用户目录 —— 那是要抓的目标 | 不动（在允许清单里写明理由） |
+| `scan_history_privacy.py` 的 `C:\Users\<用户名>` 正则 | **必须**认识 Windows 用户目录 —— 那是要抓的目标 | 不动（在允许清单里写明理由） |
 
 "已经对了"的条目也写出来：审计的价值不只是找到问题，还包括**确认哪些地方不该动**。
 

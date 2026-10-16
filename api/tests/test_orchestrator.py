@@ -9129,6 +9129,11 @@ def test_auto_concurrency_fuel_uses_real_slots_not_stale_statuses(monkeypatch, t
 
 
 def test_auto_concurrency_fuel_score_drives_midrange_target(monkeypatch, tmp_path: Path):
+    # ⚠️ 冻结的是 **concurrency 模块里的 `utcnow`**：燃料分（`time_pressure`）是在那里算的，
+    # 只 patch `orchestrator_module.utcnow` 不管用 —— 于是这条判据的结果**取决于跑的时刻**
+    # （实测：白天跑 target=3 通过，晚上跑变成 4，因为"距截止还有几分钟"变了）。
+    # 一条取决于墙上时钟的判据是 flaky 的一种最隐蔽形态：它只在某些时段红。
+    monkeypatch.setattr("app.concurrency.utcnow", lambda: datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc))
     monkeypatch.setattr(orchestrator_module, "utcnow", lambda: datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc))
     settings = get_settings().__class__(
         mock_delay_seconds=0,
@@ -9282,7 +9287,13 @@ def test_status_reports_l4_target_capacity_before_limiter_adjustment(tmp_path: P
 @pytest.mark.asyncio
 async def test_auto_concurrency_sprints_after_fuel_deadline_when_queue_remains(tmp_path: Path):
     now = datetime.now(timezone.utc)
-    deadline_hour = now.hour if now.minute > 0 else (now.hour - 1) % 24
+    # 现算一个"已经过去了"的加油点，好让"已过"分支在**任意时刻**都可达。
+    # ⚠️ 必须保证本地小时 >= 1：`hour - 1` 在本地 0 点会绕回前一天 23 点，而
+    # `local_now(00:xx) >= deadline(23:00)` 为假 —— 旧写法（`minute == 0` 时取 `(hour-1)%24`）
+    # 因此有一个**每天头一分钟**必红的窗口。这里在没有洞的地方取值（本地 0 点时把时区偏移放到
+    # +1，本地时间就成了 1 点），洞本身由 test_concurrency.py::test_fuel_deadline_hour_wraps_at_midnight 钉住。
+    offset_hours = 0.0 if now.hour >= 1 else 1.0
+    deadline_hour = now.hour + int(offset_hours) - 1
     settings = get_settings().__class__(
         mock_delay_seconds=0,
         workspace_dir=tmp_path / "workspace",
@@ -9293,7 +9304,7 @@ async def test_auto_concurrency_sprints_after_fuel_deadline_when_queue_remains(t
         auto_concurrency_max=13,
         auto_concurrency_queue_threshold=6,
         auto_concurrency_fuel_deadline_hour=deadline_hour,
-        auto_concurrency_fuel_timezone_offset_hours=0,
+        auto_concurrency_fuel_timezone_offset_hours=offset_hours,
     )
     orchestrator = Orchestrator(settings)
     await orchestrator._agent_semaphore.set_capacity(1)

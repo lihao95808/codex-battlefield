@@ -22,6 +22,8 @@
 | [`e2e-browser.md`](e2e-browser.md) | 真浏览器 E2E：为什么不用 `page.route` 回放、`channel: 'chromium'` 那个坑、诊断导出怎么判 |
 | [`weak-model-usability.md`](weak-model-usability.md) | 弱模型可用性实测：两档便宜模型能当 planner、失败模式是"结构漂移"、没验成的档怎么如实标记 |
 | [`ci.md`](ci.md) | CI 与跨平台：为什么必须双平台、判据为什么不能断言"CI 会绿"、W9 防的是什么分叉 |
+| [`test-determinism.md`](test-determinism.md) | 判据的确定性：门禁红绿不能取决于"什么时候跑"（时钟/负载/共享目录三类不确定性、午夜那个 60 秒窗口、变异记录） |
+| [`public-tree-hygiene.md`](public-tree-hygiene.md) | 公开树卫生：**一次真实的内部标识泄漏**、为什么三个月都没被抓住、H1–H4 四条判据与它们的变异记录、还算不上的那部分 |
 | [`cross-platform.md`](cross-platform.md) | 跨平台：审计出的 Windows 假设与处置、`platform_support.py` 的三条取舍、**没在 Linux 上跑过**这件事怎么记 |
 | [`container.md`](container.md) | 容器化：三条取舍、**沙箱在容器内的差异**、凭据与 `git worktree` 的坑 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
@@ -132,6 +134,15 @@ git push pub pub-main:main
 发布前的最小检查清单：
 
 1. `python scripts/scan_history_privacy.py --paths-only`：无本机路径 / 内网域名命中；
+   再跑一次公开树扫描（词表**放在仓库之外**，理由见 `docs/public-tree-hygiene.md`）：
+
+   ```powershell
+   $env:CODEX_BATTLEFIELD_PUBLIC_TERMS = "D:\work\.cb-public-terms.txt"
+   python scripts/check_public_tree.py --terms-file $env:CODEX_BATTLEFIELD_PUBLIC_TERMS
+   ```
+
+   配了这个环境变量，`api/tests/test_public_tree_hygiene.py` 的 H4 也会真的跑
+   （不配就跳过 —— 跳过意味着"私有标识不进公开树"这条规矩这一次没人验）；
 2. `api/` 里 `python -m pytest -q` 全绿（配置已开 `-n auto` 并行；一条命令约 100 秒）；
 3. `python -m ruff check --config api/pyproject.toml api scripts` 干净——**范围必须同时覆盖 `api/` 和
    仓库根的 `scripts/`**（静态检查抓"名字写错/变量没用/不变量没写"这类真错；2026-09-22 那次

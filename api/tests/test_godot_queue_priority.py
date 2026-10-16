@@ -22,6 +22,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from app.config import get_settings
 from app.runner import CodexExecRunner
 
@@ -297,6 +299,31 @@ def test_may_attempt_now_fails_open_without_state(tmp_path: Path, monkeypatch) -
     monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_STATE_PATH", str(state_path.with_name("absent.json")))
     monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_LOCK_PATH", str(state_path.with_name("godot.lock")))
     monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_QUEUE_PRIORITY", "1")
+    assert wrapper._may_attempt_now(os.getpid(), 1) is True
+
+
+def test_may_attempt_now_fails_open_when_state_file_is_unreadable(tmp_path: Path, monkeypatch) -> None:
+    """读者撞上 `PermissionError` 时必须放行 —— 那正是 Windows 换名窗口里的真实错误。
+
+    事故记录见 `docs/incident-conclusions.md` §8.2：写者用 `os.replace` 换名的瞬间，
+    读者打不开目标文件（Windows 给 `PermissionError: [Errno 13]`）。这里拿一个**目录**
+    冒充状态文件：Windows 上 `open(目录)` 正是 Errno 13，POSIX 上是 `IsADirectoryError` ——
+    两者都是 `OSError`，走的必须是同一条 fail-open 分支。
+    """
+    wrapper, state_path = _unit_case(tmp_path, "unit-unreadable")
+    blocked = tmp_path / "state-as-directory"
+    blocked.mkdir()
+    monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_STATE_PATH", str(blocked))
+    monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_LOCK_PATH", str(state_path.with_name("godot.lock")))
+    monkeypatch.setenv("CODEX_BATTLEFIELD_GODOT_QUEUE_PRIORITY", "1")
+
+    # 先确认这个替身**真的**读不了：否则下面那条 `is True` 可能只是"文件不存在"的另一种走法，
+    # 判据看着绿，其实没验到"读到错误"这一支。
+    with pytest.raises(OSError) as excinfo:
+        blocked.read_text(encoding="utf-8")
+    if os.name == "nt":
+        assert isinstance(excinfo.value, PermissionError), excinfo.value
+
     assert wrapper._may_attempt_now(os.getpid(), 1) is True
 
 
