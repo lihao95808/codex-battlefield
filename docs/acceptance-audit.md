@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `4f9350f2119b5ff45da04a3f951a65a01f878b2c`、内部仓 `4db5991a9c3ef9dbb7e499e8f1c14edf38e1de76`。
+审计时的两个远端 tip：公开仓 `8d488686c1fec29426b53750cdee4bbfe644f6e6`、内部仓 `d6b3107602cf72a514e24125a9fd9e5cf2496901`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -57,14 +57,14 @@
 | P5-2 | 长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”**已实测**未达标**（cold 2.4–4.8s，最好的一次 2422ms），判据 `web/e2e/perf-first-screen.spec.ts` 目前只保证不变慢 |
 | P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过） |
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
-| P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因查清了**：加法诊断用的 `timeout-minutes: 30` 之后，check-run 注解原文是 `The job has exceeded the maximum execution time of 30m0s` —— **是“跑不完”而不是“跑错”**（同一套门禁 Windows 侧 15–18 分钟、pytest 7.6–9 分钟；本机 pytest 1.8 分钟）。本轮把预算设成 **45 分钟**（30 已实测不够 + 50% 余量，W12 钉住“必须设且不超过 60”）：要么 45 分钟内绿，要么仍在超时。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
+| P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文`The job has exceeded the maximum execution time of 30m0s`，把预算提到 **45 分钟**再跑（run 38973770051 / commit 8d48868）—— Windows 侧 **16.4 分钟 success**（连续第三次全绿），ubuntu 侧 **>44.9 分钟仍没跑完**。所以 Linux 要的不是更大的超时而是**结构性减负**（用例分片/按步骤拆作业）；分片不是放宽，合起来仍是同一套用例（W9 仍盯步骤名同步）。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
 | P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
 | P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**（F1–F4：必须支持 SSE 流式 + `response.output_item.done`） |
 
 ## 3. 双仓状态
 
-* 公开仓：`4f9350f2119b5ff45da04a3f951a65a01f878b2c`（`origin/main`）
-* 内部仓：`4db5991a9c3ef9dbb7e499e8f1c14edf38e1de76`（`internal/main`）
+* 公开仓：`8d488686c1fec29426b53750cdee4bbfe644f6e6`（`origin/main`）
+* 内部仓：`d6b3107602cf72a514e24125a9fd9e5cf2496901`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。

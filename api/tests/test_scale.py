@@ -225,7 +225,16 @@ def _measure_best_of_passes(fn) -> tuple[float, float, int]:
 
 @pytest.fixture(scope="module")
 def profiles() -> dict[str, dict[int, dict[str, float]]]:
-    """两种规模下各端点的实测画像。**整个模块只量一次**（量一份约 10 秒）。"""
+    """两种规模下各端点的实测画像。**整个模块只量一次**（量一份约 10 秒）。
+
+    ⚠️ 本文件在整套门禁里显示为"约 40 秒、几乎全在 setup"—— 那是**这个测量循环**，
+    不是夹具造树慢。实测（2026-10-17 单独量三段）：`drop_all`+`init_db` 0.11s、
+    构造 1000 个对象 0.03s、插入 1000 节点 + 400 运行记录 0.07s ——
+    夹具本体合计 **0.21 秒**，剩下 ~40 秒是预热 + 多次采样（`_measure_best_of_passes`）。
+    那次"把循环里的 `db.add` 换成 `add_all`"的改动**没有换来任何可测收益**，已还原；
+    记在这里是为了不让下一个人重复同一个猜测。要压这 40 秒只能压采样次数，
+    而那正是抗负载抖动的部分（见 §2 的说明），**不砍**。
+    """
     from app import cost, obligation_index
     from app.orchestrator import orchestrator
 
