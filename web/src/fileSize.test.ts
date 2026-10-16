@@ -38,20 +38,26 @@ const LINE_LIMIT = 500;
  *
  * | 文件 | 预算 | 为什么还没达标 |
  * |---|---|---|
- * | `App.tsx` | 2715 | 纯逻辑已抽出；剩下的是 React 组件与它们的 props/状态 |
  * | `types.ts` | 948 | 纯类型文件，按领域拆是下一步（无逻辑，风险低） |
  * | `api.ts` | 833 | 薄封装，按领域拆同上 |
- * | `StewardPanel.tsx` | 565 | 它已经超过 500 不少：面板自己带着对话状态 |
+ * | `useBattlefieldController.ts` | 783 | 它是 `App()` 搬出来的状态与回调；派生值/子 hook 还可以再拆 |
+ * | `StewardPanel.tsx` | 565 | 面板自己带着对话状态 |
+ *
+ * 本次（P5-2 第二轮）把 `App.tsx` 从 2715 行拆到 **212 行**：`LeftRail` /
+ * `WorkspaceView` / `WatchdogPanel` / `NavigationDock` / `NodePanelLayout` /
+ * `DetailPanel` 各自成文件，状态与回调进了 `useBattlefieldController`，
+ * 纯函数与类型进了 `taskView` / `uiPrimitives` / `browserSession`。
+ * 所以 `App.tsx` 这条**从预算表里删掉**（棘轮第 4 条：达标的条目不许留着）。
  */
 const BUDGETS: Record<string, number> = {
-  'App.tsx': 2715,
   'types.ts': 948,
   'api.ts': 833,
+  'useBattlefieldController.ts': 783,
   'StewardPanel.tsx': 565,
 };
 
 /** 预算总量（= 逐项之和）。**每拆一块就把它调下来**，只降不升。 */
-const BUDGET_TOTAL = 5061;
+const BUDGET_TOTAL = 3129;
 
 function sourceFiles(): string[] {
   return readdirSync(SRC)

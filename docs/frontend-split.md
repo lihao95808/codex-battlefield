@@ -1,13 +1,50 @@
 # 前端拆分与按需轮询（P5-2，部分落地）
 
-实现（本次）：
-- 抽出 `web/src/labels.ts`（词表与标签映射）、`web/src/format.ts`（格式化）、
-  `web/src/polling.ts`（按需轮询）
-- `App.tsx` 2924 → **2715 行**
-- 轮询从"裸 `setInterval` 每 10 秒"改成 **SSE 为主 + 60 秒兜底 + 页面不可见时完全不拉**
-- `web/src/fileSize.test.ts`：文件体量的**棘轮判据**
+实现（第一轮）：抽出 `web/src/labels.ts`（词表与标签映射）、`web/src/format.ts`（格式化）、
+`web/src/polling.ts`（按需轮询），`App.tsx` 2924 → 2715 行；轮询从"裸 `setInterval`
+每 10 秒"改成 **SSE 为主 + 60 秒兜底 + 页面不可见时完全不拉**；
+`web/src/fileSize.test.ts` 是文件体量的**棘轮判据**。
+
+实现（第二轮，本轮）：把 `App.tsx` 从 2715 行拆到 **15 行**（只剩组合）：
+
+| 新文件 | 装什么 |
+|---|---|
+| `useBattlefieldController.ts` | `App()` 的状态、回调、派生值（783 行，最大的一块） |
+| `LeftRail.tsx` / `WorkspaceView.tsx` | `App()` 的两块 JSX（左栏 / 画布+控制台+右栏） |
+| `WatchdogPanel.tsx` / `NavigationDock.tsx` / `NodePanelLayout.tsx` / `DetailPanel.tsx` | 四个面板/画布单元 |
+| `taskView.ts` / `uiPrimitives.tsx` / `browserSession.ts` | 纯函数与类型、小 UI 原语、URL/预览窗口这些浏览器侧动作 |
+
+本轮之后 `App.tsx` **从预算表里删掉**（棘轮第 4 条：达标的条目不许留着），
+`BUDGET_TOTAL` 5061 → **3129**。仍然超标的四个：`types.ts` 948、`api.ts` 833、
+`useBattlefieldController.ts` 783、`StewardPanel.tsx` 565 —— 都如实留在表里。
 
 判据：`format.test.ts`（36 例）、`polling.test.ts`（11 例）、`fileSize.test.ts`（11 例）。
+
+## 0. 这一轮是怎么拆的（以及为什么手写扫描器不行）
+
+三次手写"字符配平"扫描器，三次都错，错法一个比一个隐蔽：
+
+1. **逐行扫** → 模板串 `` `${x} 小时` `` 里的 `}` 被当成块结尾，`App()` 被判成 500 行结束；
+2. **改成跨行状态机** → 模板串里的 `}` 仍被当成"不匹配的括号"；
+3. **修好模板串** → "从声明找第一个配平的 `}`"找到的是**体内第一个块**的结尾
+   （`WatchdogPanel` 被判成 1965 行结束，真实 2371）。
+
+结论写进了 `web/_ts_extract.mjs`（保留这个工具，它记录了这三条）：
+这类活交给 `typescript` 的解析器，它是这个仓库本来就有的依赖。
+
+### 拆的过程本身也踩了四个坑（都留了注释）
+
+* **改名只改引用、没删原文**：`const view = useBattlefieldController();` 插进去了，
+  但 688 行状态**还在** App 里。构建**通过**（`view.xxx` 成了未定义属性），
+  运行时才炸 —— 比编译错更坏。所以删除必须由工具做，不能靠"改了名就等于搬走了"。
+* **`App.tsx`（5 万字符）经 stdout 传给 Python 会被截断**：JSON 解析出来是空串，
+  表现成"找不到 App() 体内第一条语句"。改成让 Node 直接写文件。
+* **新行插在"最后一个 import 之后"** → 插进了多行 `import type { ... }` 的中间
+  （`TS1003 Identifier expected`）。改成插在**第一个 import 之前**。
+* **"JSX 自己声明的名字"判据写得太宽**：`\(\s*(\w+)\s*[,)]` 把
+  `statNumber(visibleStats, 'total')` 里的 `visibleStats` 也当成了 JSX 局部变量，
+  于是它既没进 hook 的 return、也没被改名。收紧成只认真实参数表。
+
 
 ## 1. 抽出来的三块，以及为什么是这三块
 
