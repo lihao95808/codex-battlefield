@@ -4100,3 +4100,164 @@ select:focus {
 .steward-actions-settled > .steward-action-list {
   margin-top: 6px;
 }
+
+/* ---------- 状态与数据（P2-5）----------
+   折叠式：默认收起，因为绝大多数会话不需要动它。但一旦展开，
+   里面的东西都不可逆 —— 所以危险区（清空状态）刻意用红边，
+   与"工程""设置"这些日常面板在视觉上分开。 */
+.state-admin {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #6b7a90;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.state-admin > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sa-summary {
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.sa-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #4a5768;
+}
+
+.sa-line-label {
+  flex: 0 0 56px;
+  color: #6b7a90;
+}
+
+.sa-line code {
+  font-size: 10px;
+  background: #f2f4f7;
+  border-radius: 3px;
+  padding: 0 3px;
+  word-break: break-all;
+}
+
+/* "切了工程没重启"：这是最容易误判的一种状态，必须显眼。 */
+.sa-stale {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+  border-radius: 6px;
+}
+
+.sa-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sa-project {
+  padding: 6px 8px;
+  border: 1px solid #e3e9f2;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.sa-project-active {
+  border-color: #3f6ea8;
+  background: #f5f9ff;
+}
+
+.sa-project-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sa-project-key {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.sa-project-root,
+.sa-project-meta {
+  font-size: 10px;
+  color: #6b7a90;
+  word-break: break-all;
+  margin-top: 2px;
+}
+
+.sa-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #dbe3ef;
+}
+
+.sa-section > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sa-danger {
+  border-top: 1px dashed #e9c2c2;
+}
+
+.sa-danger > summary {
+  color: #822727;
+}
+
+.sa-preview {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #f7f9fc;
+  border: 1px solid #e3e9f2;
+  border-radius: 6px;
+}
+
+.sa-preview-line {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #4a5768;
+}
+
+.sa-candidate {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  background: #eef2f8;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+/* 清空状态：红底 —— 与"保存设置"这种日常按钮必须一眼可分。 */
+.sa-reset {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #a83232;
+  background: #a83232;
+  color: #fff;
+  cursor: pointer;
+}
+
+.sa-reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

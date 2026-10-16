@@ -161,6 +161,32 @@ class ProjectStartResponse(BaseModel):
     status: str
 
 
+class MigrateStateRequest(BaseModel):
+    """迁移旧 `<repo>/workspace/` 里的库到某个工程状态目录（P2-5）。
+
+    `dry_run` **默认真**：迁移虽然实现是"复制"，但对用户而言不可逆，
+    而"目标工程选错了"是这里唯一会真正造成损失的错。所以默认只预演。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_root: str = ""
+    dry_run: bool = True
+
+
+class ResetProjectRequest(BaseModel):
+    """清空一个工程的**状态目录**（不可逆）。
+
+    `confirm` 必须**逐字等于**工程 key。这不是仪式：删除状态是不可逆动作，
+    而"我点错了工程"在这里没有后悔药。要求把 key 抄一遍，是让手滑付出代价。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: str = ""
+    purge: bool = True
+
+
 class SettingsUpdateRequest(BaseModel):
     """修改可编辑设置（`POST /api/settings`）。
 

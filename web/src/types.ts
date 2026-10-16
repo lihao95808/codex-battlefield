@@ -534,3 +534,70 @@ export interface SettingsSaveResponse {
   restart_required: boolean;
   message: string;
 }
+
+/** 一个工程的状态占用（`GET /api/state/overview`）。 */
+export interface StateProjectEntry {
+  key: string;
+  root: string;
+  project_dir: string;
+  active: boolean;
+  root_exists: boolean;
+  /** 状态目录与工程是否同盘 —— 跨盘时 git worktree 不可靠。 */
+  drive_matches: boolean;
+  db_bytes: number;
+  /** 整个状态目录（含 runs / worktrees / 快照）。清空重来要删的就是它。 */
+  state_bytes: number;
+}
+
+export interface StateOverviewResponse {
+  state_home: string;
+  config_file: string;
+  bound: boolean;
+  active_key: string;
+  project_root: string | null;
+  snapshot_matches_active_file: boolean;
+  projects: StateProjectEntry[];
+  /** 旧 `<repo>/workspace/` 里还剩什么 —— 迁移的入口。 */
+  legacy: { present: boolean; db_path: string; db_bytes?: number };
+}
+
+/** 迁移预演 / 结果。 */
+export interface MigrationPreviewCandidate {
+  path: string;
+  source: string;
+  usable: boolean;
+  reason: string;
+}
+
+export interface MigrationPreviewResponse {
+  available: boolean;
+  reason?: string;
+  repo_root?: string;
+  legacy_db?: string;
+  legacy_db_bytes?: number;
+  legacy_task_count?: number;
+  legacy_worktree_rows?: number;
+  current_project_root?: string | null;
+  target_key?: string | null;
+  candidates?: MigrationPreviewCandidate[];
+}
+
+export interface MigrationApplyResponse {
+  status: string;
+  copied: boolean;
+  skipped_reason: string;
+  project_key: string;
+  target_db: string;
+  worktree_rows_rewritten: number;
+  codex_home_copied: boolean;
+  note: string;
+}
+
+export interface StateResetResponse {
+  status: string;
+  key: string;
+  root: string;
+  purged: boolean;
+  was_active: boolean;
+  note: string;
+}

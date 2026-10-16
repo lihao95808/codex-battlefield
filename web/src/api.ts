@@ -8,7 +8,11 @@ import type {
   MountedProjectsResponse,
   SettingsResponse,
   SettingsSaveResponse,
+  MigrationApplyResponse,
+  MigrationPreviewResponse,
   StateLayoutResponse,
+  StateOverviewResponse,
+  StateResetResponse,
   StewardActionDecision,
   StewardActionsResponse,
   StewardAlertPush,
@@ -187,6 +191,73 @@ export async function saveSettings(
       detail = await response.text();
     }
     throw new Error(detail || '保存失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 状态根与各工程的只读概览（P2-5）。
+ *
+ * 回答三个原先只能靠命令行的问题：状态落在哪、每个工程占多大、
+ * 旧 `<repo>/workspace/` 里还剩什么需要迁移。
+ */
+export async function fetchStateOverview(): Promise<StateOverviewResponse> {
+  const response = await fetch('/api/state/overview');
+  if (!response.ok) {
+    throw new Error('状态概览读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 迁移**预演**（`dryRun: true`）或真正执行。
+ *
+ * 预演不写任何文件，用来让用户在动手前看到目标 key、旧库大小与节点数、
+ * 以及每个候选工程能不能用 —— "目标选错了"是这里唯一会造成损失的错。
+ */
+export async function migrateState(
+  projectRoot: string,
+  dryRun: boolean,
+): Promise<MigrationPreviewResponse | MigrationApplyResponse> {
+  const response = await fetch('/api/state/migrate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_root: projectRoot, dry_run: dryRun }),
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? '';
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || '迁移失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 清空当前工程的状态目录（**不可逆**）。
+ *
+ * `confirm` 必须逐字等于工程 key —— 后端会核对，不匹配就 409。
+ * 这不是仪式：删状态没有后悔药，要求把 key 抄一遍是让手滑付出代价。
+ */
+export async function resetProjectState(confirm: string): Promise<StateResetResponse> {
+  const response = await fetch('/api/state/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm, purge: true }),
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? '';
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || '重置失败：' + response.status);
   }
   return response.json();
 }

@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 
 from . import (
     diagnostics as diagnostics_mod,
+    project_store,
+    migration as migration_mod,
+    state_admin,
     settings_registry,
     obligation_index,
     steward,
@@ -43,6 +46,8 @@ from .state_layout import config_file, read_active_project, set_config_value
 from .steward_capabilities import catalog as steward_catalog
 from .steward_status import build_status as build_steward_status
 from .schemas import (
+    MigrateStateRequest,
+    ResetProjectRequest,
     SettingsUpdateRequest,
     BindProjectRequest,
     ApiRestartDrainResponse,
@@ -395,6 +400,111 @@ def update_settings(payload: SettingsUpdateRequest) -> dict:
         "message": (
             "已写入用户配置文件。**重启 API 后生效** —— 设置是启动时读入的，"
             "当前进程仍在用旧值。"
+        ),
+    }
+
+
+@app.get("/api/state/overview")
+def state_overview() -> dict:
+    """状态根与各工程的**只读**概览（P2-5）。
+
+    回答三个原先只能靠命令行的问题：状态落在哪、每个工程占多大、
+    旧 `<repo>/workspace/` 里还剩什么需要迁移。**不写任何文件。**
+    """
+    return state_admin.overview(orchestrator.settings)
+
+
+@app.post("/api/state/migrate")
+def state_migrate(payload: MigrateStateRequest) -> dict:
+    """把旧库迁到某个工程的每工程状态目录（P2-5）。
+
+    **默认只预演**（`dry_run=true`）。真正执行走既有的 `migration.migrate()`
+    —— 那是"复制"，不动旧库，且按 sha256 幂等（迁过的不会产生第二份）。
+    """
+    settings = orchestrator.settings
+    if payload.dry_run:
+        return state_admin.migration_preview(
+            settings, repo_root=Path(payload.project_root) if payload.project_root else None
+        )
+
+    _ensure_mutable()
+    target = payload.project_root.strip() or (
+        str(settings.layout.project_root) if settings.layout.project_root else ""
+    )
+    if not target:
+        raise HTTPException(
+            status_code=400,
+            detail="没有指定目标工程，而且当前也没绑定工程。先绑定一个，或给出 project_root。",
+        )
+    try:
+        result = migration_mod.migrate(
+            repo_root=Path(ROOT_DIR),
+            project_root=Path(target),
+            state_home=settings.layout.state_home,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - 迁移失败要如实回报，不是 500
+        raise HTTPException(status_code=400, detail=f"{exc.__class__.__name__}: {exc}") from exc
+
+    return {
+        "status": "migrated" if result.copied else "skipped",
+        "copied": result.copied,
+        "skipped_reason": result.skipped_reason,
+        "project_key": result.project.key,
+        "target_db": str(result.project.db_path),
+        "worktree_rows_rewritten": result.worktree_rows_rewritten,
+        "codex_home_copied": result.codex_home_copied,
+        "source_sha256": result.source_sha256,
+        "note": "旧库**未被改动**（迁移是复制）。要清理它请自行删除。",
+    }
+
+
+@app.post("/api/state/reset")
+def state_reset(payload: ResetProjectRequest) -> dict:
+    """清空**当前工程**的状态目录（不可逆，P2-5）。
+
+    两道闸，缺一不可：
+
+    1. `confirm` 必须逐字等于当前工程 key —— 让手滑付出代价。
+    2. 走既有的 `project_store.remove_project(purge=True)`，不在这里自己删目录
+       —— 那个函数同时维护 registry 与 `active.json`，自己删会留下悬空记录。
+
+    只允许重置**当前**工程：跨工程删别人的数据属于"我本想删 A 结果删了 B"，
+    而那种错在界面上一眼看不出来。
+    """
+    _ensure_mutable()
+    settings = orchestrator.settings
+    layout = settings.layout
+    if not layout.bound or not layout.project_key:
+        raise HTTPException(status_code=400, detail="当前没有绑定工程，没有可重置的对象。")
+    if payload.confirm.strip() != layout.project_key:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "确认串不匹配，已拒绝。\n"
+                f"  要清空这个工程的状态，请输入它的 key：{layout.project_key}"
+            ),
+        )
+    try:
+        result = project_store.remove_project(
+            layout.project_key,
+            state_home=layout.state_home,
+            purge=bool(payload.purge),
+        )
+    except ProjectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "reset",
+        "key": result["key"],
+        "root": result["root"],
+        "purged": result["purged"],
+        "was_active": result["was_active"],
+        "note": (
+            "状态目录已删除，`active.json` 已清除 —— **重启 API** 后它会回到未绑定状态"
+            "（回退到仓库内 workspace）。工程目录本身没有被碰。"
+            if result["purged"]
+            else "只从 registry 摘除，状态目录**保留**在磁盘上。"
         ),
     }
 
