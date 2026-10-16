@@ -63,11 +63,18 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile
 
+      # E2E 用的浏览器：只装 chromium（WebKit/Firefox 没跑，装了也是白等）。
+      # `--with-deps` 在 ubuntu 上装系统库；windows 上它没有意义但也不会失败。
+      - name: 装 E2E 浏览器（chromium）
+        shell: bash
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
       # 门禁本身：`verify_all.py` 一次跑完下列步骤 ——
       #   文档排版检查 / 后端语法检查 / PowerShell 脚本编码检查 /
       #   仓库静态检查（ruff：api + scripts） / 后端 pytest /
       #   provider 矩阵配置检查 /
-      #   前端测试 / 前端 lint / 前端 build
+      #   前端测试 / 前端 lint / 前端 build / 前端 E2E（真浏览器 + 真后端）
       # 这些名字是从 `scripts/verify_all.py` 里**逐字**抄的，不是概述：
       # `api/tests/test_ci_workflow.py` 的 W9 会核对它们对得上，
       # 防的是"两份门禁慢慢变成不同的东西"。
@@ -78,6 +85,9 @@ jobs:
       # `provider 矩阵配置检查` **不需要凭据也不需要网络**（它只生成隔离 config.toml
       # 并核对结构），所以它是常驻门禁；CI 上没有 codex 时报告里 `could_load_config`
       # 记 null（**没查**），不会伪装成通过。
+      #
+      # `前端 E2E` 需要 Playwright 的 chromium（下面那步装），它会**自己起一个后端**
+      # （隔离端口 8877 + 隔离状态根 `web/.e2e/`，`RUNNER=mock`），不碰任何常驻实例。
       #
       # `CODEX_BATTLEFIELD_RUNNER=mock` 是**必须**的：`verify_all` 会调
       # `bench_run.py` 之类的脚本，而它们默认读用户的 `runner_mode`。

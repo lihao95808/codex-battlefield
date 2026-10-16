@@ -1,4 +1,4 @@
-﻿import {
+import {
   Background,
   Controls,
   Handle,
@@ -951,7 +951,7 @@ export function App() {
   };
 
   return (
-    <main className="shell">
+    <main className="shell" data-testid="app-shell" data-busy={busy ? '1' : '0'}>
       <aside className="left-rail">
         <div className="brand">
           <div className="brand-mark">
@@ -1110,7 +1110,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="stat-grid" aria-label="战场统计主项">
+        <section className="stat-grid" aria-label="战场统计主项" data-testid="stat-grid-primary">
           <Stat label="总数" value={statNumber(visibleStats, 'total')} />
           <Stat label="完成" value={statNumber(visibleStats, 'done')} />
           <Stat

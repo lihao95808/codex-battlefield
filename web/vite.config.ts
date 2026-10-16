@@ -1,12 +1,23 @@
-import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
+
+// API 端口**必须可配**：E2E（`e2e/`）会并行起一个自己的后端（隔离库 + 隔离状态根），
+// 钉死 8765 会打到开发者本机正在跑的那个 API 上 —— 那就是"测试改了你正在看的库"。
+const apiPort = process.env.CODEX_BATTLEFIELD_API_PORT || '8765';
 
 export default defineConfig({
   plugins: [react()],
+  // 单元测试只跑 `src/`。`e2e/` 是 **Playwright** 的：它的 `test`/`expect` 跟 vitest 不是
+  // 一回事，vitest 撞上去会报 "Playwright Test did not expect test() to be called here"
+  // —— 实测 `pnpm test` 因此红过（`Test Files 1 failed | 14 passed`）。
+  test: {
+    include: ['src/**/*.test.{ts,tsx}'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+  },
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8765',
+      '/api': `http://127.0.0.1:${apiPort}`,
     },
     watch: {
       // 编辑器/工具做**原子写**时会在源码目录里先建一个临时目录

@@ -30,3 +30,11 @@ workspace/
 #   要留证据就按仓库惯例写进 `VERIFICATION_STATUS.md` 的表格（带日期）。
 bench/runs/
 bench/reports/
+
+# E2E（P5-3）跑出来的东西都不入库：
+# - `web/.e2e/` 是**隔离的状态根**（它自己的库与 runs），跑完可以整目录删掉；
+# - `web/test-results/` 是失败时的 trace/截图，里面带本机绝对路径；
+# - `web/playwright-report/` 是 HTML 报告。
+web/.e2e/
+web/test-results/
+web/playwright-report/

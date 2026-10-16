@@ -190,6 +190,11 @@ def main() -> None:
     run_step("前端测试", [pnpm, "test"], ROOT / "web")
     run_step("前端 lint", [pnpm, "lint"], ROOT / "web")
     run_step("前端 build", [pnpm, "build"], ROOT / "web")
+    # E2E（P5-3）：真浏览器 + **真后端**（它自己起一个隔离端口/隔离库的 uvicorn）。
+    # 没装 Playwright 浏览器时它会报 `Executable doesn't exist` —— 按
+    # `docs/e2e-browser.md` §5 跑一次 `playwright install chromium` 即可。
+    # 失效方向：**阻断** —— 接缝断了（前端拿不到后端的字段）必须在发版前红。
+    run_step("前端 E2E（真浏览器 + 真后端）", [pnpm, "exec", "playwright", "test", "--reporter=list"], ROOT / "web")
 
     if args.real_smoke:
         smoke_command = [
