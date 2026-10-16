@@ -226,6 +226,38 @@ pytest 阶段非常慢，具体慢在哪一步还没有日志**（拿不到 ubun
 
 这条已经写进 §5，这里再记一次 —— 因为它第二次发生了。
 
+### 9.2 Linux 侧到底怎么了：**runner 掉线，什么都没留下**
+
+同一版本（`ba52953`）的 ubuntu 作业在 `跑 verify_all` 里跑了 **46 分钟**，然后以
+`failure` 结束 —— 而 **`跑 verify_all` 没有结论、后续步骤全是 `pending`、作业日志 404**。
+API 的 check-run 注解给出了原文（这是唯一一句"来源"）：
+
+```text
+[failure] The hosted runner lost communication with the server. Anything in your workflow
+that terminates the runner process, starves it for CPU/Memory, or blocks its network access
+can cause this error.
+```
+
+三次同类失败都落在 **45/46 分钟**，且都停在 pytest 阶段 —— 所以这不是"Linux 上有测试
+失败"（那会给出 FAILED 与日志），而是**runner 被榨干了**（CPU/内存饥饿或网络被堵）。
+**具体是哪一个，我没有证据**：日志 404 意味着连"跑到哪个用例"都看不到。
+如实记为"Linux 侧仍无完整记录"，并把可疑处列出来供下一次查：
+
+* pytest 在本机 4 worker 下 2.5 分钟、在 Windows CI 上 9 分钟；本机最慢的用例是
+  godot 队列仲裁（多进程抢锁，各 15–18 秒）与千节点夹具（37 秒）—— 这些在 2 vCPU
+  的私有仓 runner 上会被放大，是"CPU 饥饿"的首要嫌疑；
+* 前端 E2E 会自己起后端 + Playwright，`-n auto` 会开多个 worker，是"内存饥饿"的嫌疑。
+
+**处置（本轮就做的一条）**：给作业加 `timeout-minutes: 30`
+（依据：Windows 全绿那次 18.5 分钟）。意义不是"省时间"，而是**把无声死亡变成可诊断的失败**
+—— 超时会有结论、有日志、有 pytest 进度。判据 **W12** 钉住这件事。
+
+### 9.3 Windows 那 11 条警告
+
+Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 lint/build：
+`useCallback` 缺依赖（4 条）、fast-refresh 只导出组件（6 条）、以及 Node 20 弃用提示。
+它们**不影响绿**，但"绿"不代表"干净" —— 记在这里，免得以后拿一句"CI 全绿"当"没有待办"。
+
 ## 10. 已知限制（如实写下）
 
 * **Linux 上 `verify_all` 没有一次跑完的记录**（45 分钟未完成，日志 404）。

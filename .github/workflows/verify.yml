@@ -24,6 +24,15 @@ jobs:
   verify:
     name: verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # `timeout-minutes` **不是为了省时间，是为了让失败可诊断**：
+    # ubuntu 侧已经三次在「跑 verify_all」里以 45–46 分钟被 runner 掐掉 ——
+    # API 给的注解原文是"The hosted runner lost communication with the server.
+    # Anything in your workflow that terminates the runner process, starves it for
+    # CPU/Memory, or blocks its network access can cause this error."，
+    # 而**步骤没有结论、日志 404**：等于什么都不知道。
+    # 设了上限之后，超时会变成一次**正常的失败**（有结论、有日志、有 pytest 进度）。
+    # 30 分钟的依据：Windows 侧全绿那次用了 18.5 分钟。
+    timeout-minutes: 30
     strategy:
       # 一个平台失败时**不取消另一个**：两边的失败原因常常不同，
       # 而"只看到一边红了"会让人以为另一边是好的。

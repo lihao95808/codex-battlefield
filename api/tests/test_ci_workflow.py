@@ -18,6 +18,7 @@
 | W9 | **工作流与 `verify_all` 的实际步骤对得上** | `verify_all` 加了新步骤而 CI 没跟上（或反之），两边悄悄分叉 |
 | W10 | 子进程的 **stdout 编码**被钉成 UTF-8 | Windows runner 是 cp1252 → 第一个打印中文的步骤就 `UnicodeEncodeError` 退出（**真实红过**：run 38895747296 / 38943620205 都死在「文档排版检查」） |
 | W11 | 单个脚本在 cp1252 的 stdout 下也**不崩** | 有人直接 `python scripts/check_markdown_layout.py .`（不走 verify_all）时炸在打印摘要上 |
+| W12 | 作业有 `timeout-minutes` | 没有上限的作业在 runner 被榨干时**无声死掉**（ubuntu 侧三次：45/46 分钟、步骤无结论、日志 404） |
 
 W9 是最有价值的一条：它防的是**两份"门禁"慢慢变成不同的东西**。
 做法是从 `verify_all.py` 源码里抽出它的步骤名，再核 CI 里的注释是否提到它们 ——
@@ -26,6 +27,9 @@ W9 是最有价值的一条：它防的是**两份"门禁"慢慢变成不同的�
 W10/W11 是**真 CI 反馈**换来的：这两条不是想出来的，是 GitHub Actions 在 Windows 上
 红给我看的（本机中文 Windows 是 cp936，永远看不到）。它们的形态值得记住：
 **同一个脚本、同一份代码，只因为"输出编码由环境决定"就整条门禁死在第一步。**
+
+W12 来自 Linux 侧**什么都没留下**的那三次失败：runner lost communication，步骤无结论、
+日志 404。它钉的不是速度，是"失败必须留下证据"。
 """
 
 from __future__ import annotations
@@ -343,6 +347,28 @@ def test_w11_markdown_checker_survives_cp1252_stdout() -> None:
     )
     assert proc.returncode == 0, f"cp1252 下文档排版检查崩了：{proc.stdout[-500:]} {proc.stderr[-800:]}"
     assert "个 .md" in proc.stdout, f"摘要没打出来：{proc.stdout[-300:]}"
+
+
+def test_w12_the_job_has_a_timeout_so_a_death_is_diagnosable(workflow: dict) -> None:
+    """作业必须有 `timeout-minutes`。
+
+    这一条来自一次**什么都没留下**的失败：ubuntu 侧三次在「跑 verify_all」里以 45–46 分钟
+    结束，步骤没有结论、日志 404，API 的注解只说
+    "The hosted runner lost communication with the server. Anything in your workflow that
+    terminates the runner process, starves it for CPU/Memory, or blocks its network access
+    can cause this error."
+
+    没有上限的作业在资源被榨干时**死得无声**；有上限则会变成一次正常的失败
+    （有结论、有日志、能看到 pytest 跑到哪）。所以这条判据钉的不是"跑得快"，
+    而是"失败必须留下证据"。
+    """
+
+    for name, job in (workflow.get("jobs") or {}).items():
+        limit = job.get("timeout-minutes")
+        assert isinstance(limit, int) and limit > 0, (
+            f"{name} 没设 timeout-minutes —— runner 被榨干时会无声死掉（没有结论、没有日志）"
+        )
+        assert limit <= 60, f"{name} 的 timeout-minutes={limit} 太长，超时就不再有诊断价值"
 
 
 # ---------- 我**不能**验证的事（如实写下来） ----------
