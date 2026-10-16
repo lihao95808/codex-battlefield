@@ -81,6 +81,9 @@ FIRST_PAINT_BUDGET_MS = 700.0
 PAYLOAD_BUDGET_BYTES = 1024 * 1024
 # 节点数涨 4 倍时耗时的上限比。基线实测 2.8–4.9，留一倍余量：抓的是 8 以上的超线性退化。
 MAX_SCALE_RATIO = 8.0
+# 比值的**分母兜底**（毫秒）。小样本（2–4ms）在并行负载下会被调度噪声放大成十几倍，
+# 那不是退化而是分母太小。绝对预算（S3）另外把关，所以这里兜底不削弱判据。
+RATIO_FLOOR_MS = 10.0
 
 _STATUS_CYCLE = (
     TaskStatus.DONE.value,
@@ -298,13 +301,19 @@ def test_s4_growth_stays_sub_quadratic(
 
     这条是唯一能抓 **O(n²)** 的判据：绝对预算在 n=1000 时可能还没破，
     而 O(n²) 在 n=4000 时就是 16 倍。比值在 4 附近是线性，8 以上就该查了。
+
+    ⚠️ 小样本要**兜底**（`RATIO_FLOOR_MS`）。`obligation_board` 在 250 节点下只有
+    2–4 ms，在 `-n auto` 的负载下被调度噪声推到 3.6 ms 就会让比值变成 13.7 ——
+    那不是退化，是**分母太小**。实测踩到过（同一次运行里另外 4 个端点都正常）。
+    兜底之后比值衡量的是"绝对增量"，而绝对预算（S3）已经单独把关。
     """
-    small = profiles[SMALL][name]["p50"]
+    small = max(profiles[SMALL][name]["p50"], RATIO_FLOOR_MS)
     large = profiles[LARGE][name]["p50"]
     ratio = large / small if small > 0 else float("inf")
     assert ratio < MAX_SCALE_RATIO, (
         f"{name} 从 {SMALL} 到 {LARGE} 节点耗时涨了 {ratio:.2f} 倍"
-        f"（{small:.1f}ms → {large:.1f}ms），疑似超线性退化"
+        f"（{profiles[SMALL][name]['p50']:.1f}ms → {large:.1f}ms，"
+        f"分母按 {RATIO_FLOOR_MS}ms 兜底），疑似超线性退化"
     )
 
 

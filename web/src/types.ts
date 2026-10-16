@@ -782,6 +782,67 @@ export interface ConclusionPayload {
   updated_at: string | null;
 }
 
+/** 注意账的一条认领（`GET /api/attention`，P4-3）。 */
+export interface AttentionClaim {
+  id: number;
+  kind: string;
+  kind_label: string;
+  target: string;
+  actor: string;
+  actor_label: string;
+  reason: string;
+  claimed_at: string | null;
+  expires_at: string | null;
+  remaining_seconds: number;
+}
+
+export interface AttentionResponse {
+  claims: AttentionClaim[];
+  count: number;
+  actors: { actor: string; label: string }[];
+  kinds: { kind: string; label: string }[];
+  note: string;
+}
+
+/** 可调档位（`GET /api/watchdog/tuning`，P4-2）。 */
+export interface TuningCatalogItem {
+  key: string;
+  env: string;
+  label: string;
+  kind: 'int' | 'bool';
+  minimum: number | null;
+  maximum: number | null;
+  rationale: string;
+  /** `up` / `down`：往哪个方向变才危险；`null` = 未登记方向。 */
+  risky_direction: 'up' | 'down' | null;
+}
+
+export interface TuningChange {
+  key: string;
+  label: string;
+  old: unknown;
+  new: unknown;
+  actor: string;
+  reason: string;
+  risky: boolean;
+}
+
+export interface TuningHistoryEntry {
+  at: string | null;
+  message: string;
+  applied: boolean;
+  actor: string;
+  reason: string;
+  changes: TuningChange[];
+}
+
+export interface TuningResponse {
+  catalog: TuningCatalogItem[];
+  current: Record<string, unknown>;
+  history: TuningHistoryEntry[];
+  note: string;
+}
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */

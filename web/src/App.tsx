@@ -60,6 +60,7 @@ import { CostPanel } from './CostPanel';
 import { PolicyPanel } from './PolicyPanel';
 import { PreAuthPanel } from './PreAuthPanel';
 import { ConclusionPanel } from './ConclusionPanel';
+import { CoordinationPanel } from './CoordinationPanel';
 import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
@@ -1376,6 +1377,8 @@ export function App() {
         <PreAuthPanel />
 
         <ConclusionPanel />
+
+        <CoordinationPanel />
 
         <StateAdminPanel />
 

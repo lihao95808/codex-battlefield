@@ -5046,3 +5046,149 @@ select:focus {
   font-size: 10px;
   color: #3f6ea8;
 }
+/* ---------- 协调：注意账 + 档位（P4-3 / P4-2）----------
+   合成一个面板，因为"我调了并发 → 看门狗于是开始处理"这条因果链
+   在界面上断开就没法复盘。 */
+.coordination-panel {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #4a7a5f;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.coordination-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cw-sub-head {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5768;
+  border-bottom: 1px solid #e3e9f2;
+  padding-bottom: 2px;
+}
+
+.cw-claim-list,
+.cw-knob-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cw-claim {
+  padding: 5px 7px;
+  border: 1px solid #e3e9f2;
+  border-left: 3px solid #4a7a5f;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.cw-claim-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.cw-claim-kind {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2f5d4f;
+}
+
+.cw-claim-target {
+  font-size: 10px;
+  word-break: break-all;
+  color: #6b7a90;
+}
+
+.cw-claim-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #6b7a90;
+  word-break: break-all;
+}
+
+.cw-release {
+  margin-top: 3px;
+  font-size: 10px;
+  padding: 1px 8px;
+}
+
+.cw-knob {
+  padding: 5px 7px;
+  border: 1px solid #e3e9f2;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.cw-knob-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.cw-knob-label {
+  font-size: 11px;
+  color: #1f3a5f;
+}
+
+.cw-knob-risky {
+  font-size: 10px;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.cw-knob-help {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #6b7a90;
+}
+
+.cw-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cw-history {
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.cw-history > summary {
+  cursor: pointer;
+  color: #6b7a90;
+}
+
+.cw-history ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  line-height: 1.7;
+}
+
+.cw-history-line {
+  color: #4a5768;
+}
+
+.cw-history-meta {
+  color: #8a94a6;
+}
+
+/* 已回滚的记录灰掉 —— "改了又改回去"不该看起来和生效中的一样。 */
+.cw-rolled-back .cw-history-line {
+  color: #8a94a6;
+  text-decoration: line-through;
+}

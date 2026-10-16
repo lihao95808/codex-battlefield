@@ -1,5 +1,6 @@
 import type {
   ApiRestartDrainResponse,
+  AttentionResponse,
   AutoPolicyReport,
   BudgetGuardResponse,
   ConclusionDraft,
@@ -27,6 +28,8 @@ import type {
   StewardMessagesResponse,
   TaskDetailResponse,
   TreeResponse,
+  TuningChange,
+  TuningResponse,
   WatchdogActionResponse,
   WatchdogStateResponse,
 } from './types';
@@ -268,6 +271,80 @@ export async function saveConclusion(input: {
 /** 导出链接（直接给 `<a href>` 用；返回的是 Markdown 附件）。 */
 export function conclusionExportUrl(conclusionId: number): string {
   return `/api/conclusions/${conclusionId}/export`;
+}
+
+/**
+ * 当前的"注意"认领（P4-3）。
+ *
+ * 管家与看门狗都能发现问题，但谁也不知道对方已经看到了 —— 于是同一件事被处理两次。
+ * 这张账是两边共用的：谁要处理谁记账，处理前先查账。
+ */
+export async function fetchAttention(): Promise<AttentionResponse> {
+  const response = await fetch('/api/attention');
+  if (!response.ok) {
+    throw new Error('注意账读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/** 放掉一条认领。强制解除别人的必须留名（否则事后查不到是谁解的）。 */
+export async function releaseAttention(input: {
+  claimId: number;
+  actor: string;
+  force?: boolean;
+  declaredBy?: string;
+  reason?: string;
+}): Promise<{ status: string; message: string }> {
+  const params = new URLSearchParams({ actor: input.actor });
+  if (input.force) params.set('force', 'true');
+  if (input.declaredBy) params.set('declared_by', input.declaredBy);
+  if (input.reason) params.set('reason', input.reason);
+  const response = await fetch(`/api/attention/${input.claimId}?${params}`, { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '解除认领失败'));
+  }
+  return response.json();
+}
+
+/** 可调档位 + 当前值 + 调整历史（P4-2）。 */
+export async function fetchTuning(): Promise<TuningResponse> {
+  const response = await fetch('/api/watchdog/tuning');
+  if (!response.ok) {
+    throw new Error('档位读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/** 调整档位。**一批要么全过、要么全不过。** */
+export async function applyTuning(input: {
+  actor: string;
+  changes: { key: string; value: unknown; reason?: string }[];
+}): Promise<{ status: string; message: string; changes: TuningChange[] }> {
+  const response = await fetch('/api/watchdog/tuning', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actor: input.actor, changes: input.changes }),
+  });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '调整档位失败'));
+  }
+  return response.json();
+}
+
+/** 回滚最近若干次档位调整。 */
+export async function rollbackTuning(input: {
+  actor: string;
+  steps?: number;
+}): Promise<{ status: string; message: string; steps: number }> {
+  const response = await fetch('/api/watchdog/tuning/rollback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actor: input.actor, steps: input.steps ?? 1 }),
+  });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '回滚失败'));
+  }
+  return response.json();
 }
 
 /**

@@ -252,6 +252,46 @@ class StewardAction(Base):
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AttentionClaim(Base):
+    """管家与看门狗之间"这件事我在处理"的记录（P4-3）。`docs/steward-watchdog-loop.md`。
+
+    ## 为什么需要一张共享的账
+
+    两边都能发现问题，但**谁也不知道对方已经看到了**。于是同一件事被处理两次：
+    看门狗把僵死节点重新排队、管家同一时刻也建议重试。重复动作的代价不只是白干活 ——
+    它会**掩盖真实信号**（"这个节点被重试了 3 次"看起来像节点不稳定，其实是两个组件
+    各点了一次）。
+
+    ## 为什么必须过期
+
+    一条忘记释放的认领会让看门狗从此对那个目标闭眼，而看板上看起来一切正常。
+    所以 `expires_at` 是必填的：**过期的认领意味着"没人管了，谁都可以接手"**，
+    这与"还在处理"必须分得清。
+
+    ## 与债务的区别
+
+    债务回答"这棵树还欠什么"（给门禁看）；认领回答"这件事谁在处理"（给管家/看门狗看）。
+    前者不会自动过期，后者必须过期。
+    """
+
+    __tablename__ = "attention_claims"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 注意类型（封闭词表，见 `app/attention.KINDS`）
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    # 目标：节点 id / 树 id / 空串表示"整个工程"
+    target: Mapped[str] = mapped_column(String(200), default="", index=True)
+    # watchdog | steward | human
+    actor: Mapped[str] = mapped_column(String(16), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # **必填**：不过期的认领会变成永久阻塞
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_by: Mapped[str] = mapped_column(String(120), default="")
+    release_reason: Mapped[str] = mapped_column(Text, default="")
+
+
 class IncidentConclusion(Base):
     """一次事故/一段长跑的**结论文档**（P4-5）。`docs/incident-conclusions.md`。
 

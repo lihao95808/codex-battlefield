@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session
 
 from . import (
     action_risk,
+    attention as attention_mod,
     auto_policy,
     conclusions as conclusions_mod,
     cost as cost_mod,
     cross_project,
+    watchdog_tuning as watchdog_tuning_mod,
     diagnostics as diagnostics_mod,
     project_store,
     migration as migration_mod,
@@ -986,6 +988,127 @@ def _open_blocking_obligations(db: Session, root_id: str) -> list[dict]:
         for item in items
         if isinstance(item, dict) and str(item.get("severity") or "") == "blocking"
     ]
+
+
+@app.get("/api/attention")
+def attention_list(db: Session = Depends(get_db)) -> dict:
+    """当前生效的"注意"认领（P4-3）。
+
+    管家与看门狗都能发现问题，但**谁也不知道对方已经看到了** —— 于是同一件事被处理
+    两次。重复动作的代价不只是白干活：它会掩盖真实信号（"这个节点被重试了 3 次"
+    看起来像节点不稳定，其实是两个组件各点了一次）。
+
+    这张账是两边共用的：谁要处理谁记账，处理前先查账。
+    """
+    return attention_mod.payload(db)
+
+
+@app.delete("/api/attention/{claim_id}")
+def attention_release(
+    claim_id: int,
+    actor: str = Query(default="human"),
+    force: bool = Query(default=False),
+    declared_by: str = Query(default=""),
+    reason: str = Query(default=""),
+    db: Session = Depends(get_db),
+) -> dict:
+    """放掉一条认领。
+
+    **只有认领人自己能放**，除非 `force=true` 且 `declared_by` 非空（人在界面上
+    强制解除）。这是权限边界：看门狗不该替管家宣布"管家的介入结束了"。
+    强制解除必须留名 —— 否则"谁把这条锁解开的"事后无从查起。
+    """
+    _ensure_mutable()
+    try:
+        return attention_mod.release(
+            db, claim_id, actor=actor, force=force, reason=reason, declared_by=declared_by
+        )
+    except attention_mod.ClaimError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/watchdog/tuning")
+def watchdog_tuning_get(db: Session = Depends(get_db)) -> dict:
+    """可调档位 + 当前生效值 + 调整历史（P4-2）。
+
+    要解决的不是"能不能调"，而是"调了之后查得到、能改回去"。
+    """
+    return {
+        "catalog": watchdog_tuning_mod.catalog(),
+        "current": watchdog_tuning_mod.current_values(orchestrator.settings),
+        "history": watchdog_tuning_mod.history(db),
+        "note": (
+            "记录**先于生效**：先写事件、再改配置。反过来会在崩溃时留下一个无人知道的"
+            "改动，而它看起来和「配置一直都是这样」完全一样。"
+        ),
+    }
+
+
+@app.post("/api/watchdog/tuning")
+def watchdog_tuning_apply(payload: dict, db: Session = Depends(get_db)) -> dict:
+    """调整档位（P4-2）。**一批要么全过、要么全不过**。
+
+    一半生效一半失败是最难查的状态：用户只看到一条错误，而实际改了两项里的第一项。
+    """
+    _ensure_mutable()
+    actor = str(payload.get("actor") or "")
+    try:
+        changes = watchdog_tuning_mod.plan(
+            payload.get("changes") or [],
+            current=watchdog_tuning_mod.current_values(orchestrator.settings),
+            actor=actor,
+        )
+    except watchdog_tuning_mod.TuningError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 记录先于生效（见模块文档）：先落审计，再写配置。
+    watchdog_tuning_mod.record(db, changes, applied=True)
+    watchdog_tuning_mod.apply_to_config_file(changes)
+    return {
+        "status": "applied",
+        "changes": [change.as_payload() for change in changes],
+        "message": (
+            watchdog_tuning_mod.render(changes)
+            + "。**重启 API 后生效**（档位是启动时读入的）。"
+        ),
+        "restart_required": True,
+    }
+
+
+@app.post("/api/watchdog/tuning/rollback")
+def watchdog_tuning_rollback(payload: dict, db: Session = Depends(get_db)) -> dict:
+    """回滚最近若干次档位调整（P4-2）。
+
+    为什么要能回滚：一次调错的并发档会让机器被压垮，而"改回去"必须是一键的 ——
+    否则人会去猜原来的值，猜错的概率不低。
+    """
+    _ensure_mutable()
+    actor = str(payload.get("actor") or "")
+    if not actor.strip():
+        raise HTTPException(status_code=400, detail="回滚必须留名（actor）。")
+    steps = int(payload.get("steps") or 1)
+    history = watchdog_tuning_mod.history(db, limit=max(1, steps))
+    if not history:
+        raise HTTPException(status_code=400, detail="没有可回滚的档位调整记录。")
+    try:
+        targets = watchdog_tuning_mod.rollback_targets(history, limit=max(1, steps))
+        changes = watchdog_tuning_mod.plan(
+            [{"key": item.key, "value": item.new, "reason": item.reason} for item in targets],
+            current=watchdog_tuning_mod.current_values(orchestrator.settings),
+            actor=actor,
+        )
+    except watchdog_tuning_mod.TuningError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    watchdog_tuning_mod.record(db, changes, applied=True)
+    watchdog_tuning_mod.apply_to_config_file(changes)
+    return {
+        "status": "rolled_back",
+        "steps": len(history),
+        "changes": [change.as_payload() for change in changes],
+        "message": watchdog_tuning_mod.render(changes) + "。**重启 API 后生效**。",
+        "restart_required": True,
+    }
 
 
 @app.get("/api/steward/pre-authorization")

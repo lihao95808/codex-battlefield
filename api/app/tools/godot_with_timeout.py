@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 
 
 STRUCTURAL_SCAN_SUFFIXES = {".gd", ".tscn", ".tres", ".godot"}
@@ -261,13 +262,69 @@ def _update_resource_state(role: str, slot=None, project: str = "") -> None:
                 )
                 # 换名落盘（不是 `write_text` 的"截断后写"）：读方 `_may_attempt_now` 不取 guard 锁，
                 # 撞上写窗口会读到半截 JSON → 解析失败 → 那一刻**所有人一起放行**，优先级静默失效。
-                tmp_path = state_path.with_name(state_path.name + ".tmp")
-                tmp_path.write_text(payload, encoding="utf-8")
-                os.replace(tmp_path, state_path)
+                #
+                # `os.replace` 仍然是**原子**的：读者只会看到旧内容或新内容，不会看到半截。
+                #
+                # ⚠️ 两层修复都必须留着（见两个 helper 的注释）：
+                #   `_state_tmp_path`     → 写者之间不抢同一个临时文件；
+                #   `_replace_with_retry` → 读者短暂持有目标文件时不丢整次更新。
+                tmp_path = _state_tmp_path(state_path)
+                try:
+                    tmp_path.write_text(payload, encoding="utf-8")
+                    _replace_with_retry(tmp_path, state_path)
+                except OSError:
+                    # 清理自己那一份；清不掉也不能让异常冒出去（状态更新是尽力而为）。
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
             finally:
                 _unlock(guard_file)
     except Exception:
         return
+
+
+def _state_tmp_path(state_path: Path) -> Path:
+    """给状态文件造一个**每个写者唯一**的临时路径。
+
+    为什么必须唯一：写死成 `<state>.tmp` 时，两个进程同时走到落盘那一步会抢同一个
+    文件 —— 一方 `os.replace` 之后，另一方的写入吃到 `PermissionError: [Errno 13]`，
+    而外层 `except` 把它静默吞掉，于是那次状态更新**完全没发生**
+    （持有者/等待者列表少一条，优先级静默失效）。
+
+    抽成函数还有一个理由：判据要能**调用产品代码本身**，而不是在测试里复制一份
+    命名逻辑 —— 复制的判据会在实现改名之后继续用旧逻辑通过。
+    """
+    return state_path.with_name(state_path.name + f".{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+
+
+def _replace_with_retry(src: Path, dst: Path, *, attempts: int = 10) -> None:
+    """把 `src` 原子换名到 `dst`，**撞上并发读者时重试**。
+
+    为什么需要重试（这是实测的第二层原因）：Windows 上 `os.replace` 在**目标文件
+    正被别的进程打开**时会失败（`PermissionError: [Errno 13]`）。读者
+    （`_may_attempt_now`）不取 guard 锁，所以这个窗口真实存在。
+
+    第一层修复（临时文件名每个写者唯一）解决的是"两个写者抢同一个 `.tmp`"；
+    那一层修完之后仍然偶发，才定位到这一层 —— **两层都要**：
+
+    * 唯一临时名 → 写者之间不互相踩；
+    * 换名重试 → 读者短暂持有目标文件时不至于整次更新丢失。
+
+    重试总时长约 0.3 秒（10 次 × 30ms 递增）。状态文件是**尽力而为**的观测值，
+    所以超时就放弃（由调用方的 `except` 收口），不做无限等待 ——
+    无限等待会让一个卡住的读者把整个槽位机制堵死。
+    """
+    last: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError as exc:
+            last = exc
+            time.sleep(0.03 * (attempt + 1))
+    assert last is not None
+    raise last
 
 
 def _try_lock(lock_file) -> bool:
