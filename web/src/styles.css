@@ -4390,3 +4390,126 @@ select:focus {
   padding: 0 4px;
   word-break: break-all;
 }
+/* ---------- 跨工程总览（P3-4）----------
+   折叠式：工程多于一个时才默认展开（单工程时它没有信息量）。
+   行按"要不要我动手"排序，颜色与徽标跟着 verdict 走。 */
+.cross-project {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #2f7a6b;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.cross-project > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.xp-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.xp-count::before {
+  content: '(';
+}
+
+.xp-count::after {
+  content: ')';
+}
+
+.xp-totals {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #4a5768;
+}
+
+.xp-costs {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #2f5d4f;
+  font-weight: 600;
+}
+
+/* 没有计价数据时说"没有"，不给 0 —— 0 会被读成"跑了但没花钱"。 */
+.xp-costs-unknown {
+  color: #8a7550;
+  font-weight: 400;
+}
+
+.xp-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #7a5310;
+}
+
+.xp-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xp-project {
+  padding: 6px 8px;
+  border: 1px solid #e3e9f2;
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: #fff;
+}
+
+/* 边框颜色 = "要不要我动手"，一眼能从一列里挑出该看的那几行。 */
+.xp-verdict-unknown { border-left-color: #a83232; }
+.xp-verdict-blocked { border-left-color: #d0982f; }
+.xp-verdict-running { border-left-color: #3f6ea8; }
+.xp-verdict-idle { border-left-color: #c3ccd9; }
+
+.xp-project-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.xp-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.xp-badge-unknown { background: #fdeeee; color: #822727; border: 1px solid #e9c2c2; }
+.xp-badge-blocked { background: #fdf6ec; color: #7a5310; border: 1px solid #e8d3ab; }
+.xp-badge-running { background: #eef4fc; color: #1f3a5f; border: 1px solid #c3d6ef; }
+.xp-badge-idle { background: #f2f4f7; color: #5d6b7e; border: 1px solid #dbe3ef; }
+
+.xp-project-key {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.xp-goal {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #1f3a5f;
+  word-break: break-all;
+}
+
+.xp-project-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #6b7a90;
+  word-break: break-all;
+}

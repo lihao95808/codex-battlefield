@@ -2,6 +2,7 @@ import type {
   ApiRestartDrainResponse,
   BudgetGuardResponse,
   ConstitutionResponse,
+  CrossProjectResponse,
   ObligationIndexBoard,
   RunArtifactResponse,
   BindProjectResponse,
@@ -191,6 +192,21 @@ export async function saveSettings(
       detail = await response.text();
     }
     throw new Error(detail || '保存失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 跨工程总览（P3-4）。
+ *
+ * 进程同一时刻只连一个库，所以"我所有工程现在怎么样"只能靠后端跨库聚合。
+ * 这个端点**只读且不建库**，读不到的工程会带 `available: false` + 原因回来
+ * —— 界面必须把"读不到"和"零"分开显示。
+ */
+export async function fetchCrossProject(): Promise<CrossProjectResponse> {
+  const response = await fetch('/api/overview/cross-project');
+  if (!response.ok) {
+    throw new Error('跨工程总览读取失败：' + response.status);
   }
   return response.json();
 }

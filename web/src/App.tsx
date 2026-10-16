@@ -56,6 +56,7 @@ import {
 } from './api';
 import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
+import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
 import { RunInspector } from './RunInspector';
@@ -1361,6 +1362,8 @@ export function App() {
         />
 
         <ProjectOnboarding onBound={() => loadTree().catch(() => undefined)} />
+
+        <CrossProjectPanel />
 
         <StateAdminPanel />
 

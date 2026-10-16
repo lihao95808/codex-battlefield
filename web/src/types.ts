@@ -601,3 +601,51 @@ export interface StateResetResponse {
   was_active: boolean;
   note: string;
 }
+
+/** 一个工程在跨工程总览里的结论（`GET /api/overview/cross-project`）。 */
+export type CrossProjectVerdict = 'unknown' | 'blocked' | 'running' | 'idle';
+
+export interface CrossProjectEntry {
+  key: string;
+  root: string;
+  active: boolean;
+  root_exists: boolean;
+  db_bytes: number;
+  state_bytes: number;
+  /** false = 这个工程的状态读不到（库不存在/损坏/不是我们的库）。 */
+  available: boolean;
+  reason: string;
+  /** 读不到时这些是 **null 而不是 0** —— "空"与"读不到"必须分得清。 */
+  task_total: number | null;
+  task_by_status: Record<string, number>;
+  roots: { id: string; title: string; status: string; updated_at: string }[];
+  spend: Record<string, unknown> | null;
+  open_blocking_obligations: number | null;
+  latest_event: { type: string; message: string; created_at: string } | null;
+  lead_goal: string | null;
+  verdict: CrossProjectVerdict;
+}
+
+export interface CrossProjectTotals {
+  project_count: number;
+  readable_count: number;
+  task_total: number;
+  open_blocking_obligations: number;
+  total_tokens: number;
+  /** 按币种分桶；一个工程都没有计价数据时是 null（不是 0）。 */
+  cost_by_currency: Record<string, number> | null;
+  /** 没有币种标签的金额，单列 —— 塞进任何币种桶都是编数据。 */
+  cost_unlabeled: number | null;
+  blocked_projects: string[];
+  unreadable_projects: string[];
+  /** true = 合计**偏小**（有工程没读到），界面必须说出来。 */
+  totals_incomplete: boolean;
+}
+
+export interface CrossProjectResponse {
+  state_home: string;
+  active_key: string;
+  projects: CrossProjectEntry[];
+  totals: CrossProjectTotals;
+  notes: string[];
+}
