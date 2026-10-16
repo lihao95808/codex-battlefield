@@ -12,6 +12,7 @@ from typing import Any, Literal
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -941,3 +942,42 @@ async def events() -> StreamingResponse:
             yield f"data: {payload}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+def _resolve_web_dist() -> Path | None:
+    """找前端产物目录（`web/dist`）。找不到返回 None（**不报错**）。
+
+    "找不到"是**正常状态**，不是出错：开发时只有 Vite dev server、没跑过
+    `pnpm build`，这时 dist 不存在很正常。所以这里返回 None 让调用方静默跳过，
+    而不是抛异常把 API 拖起来不了。
+    """
+    if not orchestrator.settings.serve_web_dist:
+        return None
+    configured = orchestrator.settings.web_dist_dir
+    candidates = [Path(configured)] if configured else []
+    # `ROOT_DIR` 是仓库根（config 里算好的）。也探一下 `api/` 旁边，
+    # 因为有人会把 dist 拷到部署目录旁边。
+    candidates.append(ROOT_DIR / "web" / "dist")
+    candidates.append(Path(__file__).resolve().parents[2] / "web" / "dist")
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+# 前端产物挂到 `/`。**必须放在所有 `/api/*` 路由之后**：
+# Starlette 按注册顺序匹配，先挂根路径会把后面的 API 全吃掉。
+#
+# `html=True` 让未知路径回落到 `index.html`。这个前端**没有路由库**
+# （单页、无深链接），所以不需要更复杂的 SPA 回退逻辑。
+_web_dist = _resolve_web_dist()
+if _web_dist is not None:
+    app.mount("/", StaticFiles(directory=str(_web_dist), html=True), name="web")
+    print(f"[web] 托管前端产物：{_web_dist}", file=sys.stderr)
+else:
+    # 说清"为什么界面打不开"比静默 404 好。这条最常见的原因是没跑过 pnpm build。
+    print(
+        "[web] 未找到前端产物（web/dist/index.html），只提供 API。"
+        "要用界面：cd web && pnpm build，或另起 Vite dev server（pnpm dev）。",
+        file=sys.stderr,
+    )

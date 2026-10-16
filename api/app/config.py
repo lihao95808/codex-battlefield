@@ -326,6 +326,21 @@ class Settings:
         os.getenv("CODEX_BATTLEFIELD_MACHINE_SAFETY_RESUME_AFTER_SECONDS", "1800")
     )
     scheduler_deferred_retry_seconds: float = float(os.getenv("CODEX_BATTLEFIELD_SCHEDULER_DEFERRED_RETRY_SECONDS", "8"))
+    # 让 API 直接托管前端产物（`web/dist`）。
+    #
+    # 为什么要它：原先跑界面必须同时起 Vite dev server —— 两个进程、还要 Node。
+    # 而"只想打开界面看看"是最常见的用法，尤其是把工具发给别人的时候。
+    # 托管之后 `pnpm build` 一次，只起 API 就有完整界面（`start.ps1 -ApiOnly`）。
+    #
+    # 默认开；`web/dist` 不存在时**自动跳过**（不影响开发：dev 模式仍然走 Vite，
+    # 而且 Vite 的 /api 代理指向本服务，两边互不干扰）。
+    serve_web_dist: bool = os.getenv("CODEX_BATTLEFIELD_SERVE_WEB", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    # 前端产物目录。留空 = 自动找（`<repo>/web/dist`）。
+    web_dist_dir: str = os.getenv("CODEX_BATTLEFIELD_WEB_DIST", "").strip()
     max_repeated_child_signature: int = int(os.getenv("CODEX_BATTLEFIELD_MAX_REPEATED_CHILD_SIGNATURE", "2"))
     # 父节点多轮 `repair` 之后进人工审查的上限（铁律 8）。**默认 2**（2026-09-22 决策，
     # 见 `docs/spec-modularization.md` §6 D1）：以前默认 0 = "不限"，那等于把这条保护默认关掉了。

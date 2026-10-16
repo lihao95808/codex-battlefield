@@ -71,6 +71,19 @@ git clone <repo> && cd <repo>
 
 > `start.ps1` 是**幂等**的：端口已在监听就复用，不重复起进程；`Ctrl+C` 只停它自己起的那些。
 
+### 只要一个进程（不需要 Node）
+
+API 会直接托管前端产物。构建一次之后，**只起 API 就有完整界面**：
+
+```powershell
+cd web; pnpm build; cd ..      # 生成 web/dist（这一步需要 Node）
+.\scripts\start.ps1 -ApiOnly   # 只起 API，界面在 http://127.0.0.1:8765
+```
+
+实测：把 Node 从 `PATH` 摘掉之后，`/` 仍返回完整界面（HTTP 200），`/api/*` 全部正常。
+`web/dist` 不存在时 API 会自动跳过托管并**打印原因**（不是静默 404），
+此时照旧用 `pnpm dev` 起 Vite。
+
 <details>
 <summary>手动安装（不想用脚本时）</summary>
 
