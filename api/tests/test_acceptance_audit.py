@@ -1,6 +1,5 @@
 """整体验收审计（判据 Q1–Q9）：把"每项都要有可反驳的判据、跑通 verify_all、双仓同步"
 这三句话变成**能红**的检查。
-
 ## 为什么要写这一组
 
 这个目标本身就是一条"验收标准"：
@@ -24,6 +23,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -298,3 +299,56 @@ def test_q6_generator_declares_a_judgement_for_every_deliverable():
 
     audit = AUDIT.read_text(encoding="utf-8")
     assert "（未登记）" not in audit, "审计里有未登记的交付物"
+
+
+# --- Q7 审计的 `--check` 必须在**干净 clone**（没有 internal/main）里也成立 -------
+
+
+def _load_generator():
+    spec = importlib.util.spec_from_file_location(
+        "gen_acceptance_audit_under_test", REPO / "scripts" / "gen_acceptance_audit.py"
+    )
+    assert spec and spec.loader, "生成器加载不了"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_q7_normalise_treats_a_missing_tip_like_a_changed_tip():
+    """`（取不到）` 与真实 tip 必须归一 —— 否则 CI 上 `--check` 必红。
+
+    这是 CI 抓到的第二次自指问题：本地有 `internal/main`，干净 clone 里没有，
+    生成器于是写"（取不到）"，而文档里记着上次的真实 tip。
+    """
+
+    normalise = _load_generator().normalise
+    assert normalise("公开仓 `deadbee`") == normalise("公开仓 `（取不到）`")
+    # 归一必须**只**作用于 tip 位置：别把正文里的数字/哈希也吃掉
+    assert "`<tip>`" in normalise("公开仓 `deadbee`")
+    assert "1681" in normalise("跑了 1681 个用例")
+
+
+def test_q7_check_passes_without_the_internal_remote(tmp_path):
+    """在"没有 `internal` 引用"的 git 环境里跑 `--check` 也必须一致。
+
+    做法：把 `GIT_DIR` 指到一个不存在的仓库 —— 生成器里的 `git rev-parse` 全部失败，
+    两个 tip 都渲染成"（取不到）"，这就**逐字复现了 CI（干净 clone）的条件**。
+    """
+
+    generator = REPO / "scripts" / "gen_acceptance_audit.py"
+    env = {**os.environ, "GIT_DIR": str(tmp_path / "not-a-repo.git")}
+    env.pop("GIT_WORK_TREE", None)
+    proc = subprocess.run(
+        [sys.executable, str(generator), "--check"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        "在没有 internal 引用的环境里审计被判成'过期' —— 干净 clone（CI）上会红。"
+        f"输出：{proc.stdout.strip()}"
+    )

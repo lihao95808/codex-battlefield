@@ -150,6 +150,12 @@ def _may_attempt_now(my_pid: int, capacity: int) -> bool:
 
     读不到/解析失败/算不出来一律**放行**：仲裁是优化，不能因为它坏了就让人永远等下去。
     容量上限始终由 OS 锁保证，与这里无关。
+
+    ⚠️ `OSError` 这一支**不是**"保险起见"：Windows 上写者用 `os.replace` 换名的瞬间，
+    目标文件处于"待替换"状态，读者会吃到 `PermissionError: [Errno 13]` —— 实测在整套门禁里
+    红过一次（读者是测试的采样循环）。这条 fail-open 有专门的判据盯着
+    （`api/tests/test_godot_queue_priority.py::test_may_attempt_now_fails_open_when_state_file_is_unreadable`，
+    拿目录冒充状态文件：Windows 上 `open(目录)` 正是 Errno 13）。
     """
     enabled, aging = _queue_policy()
     if not enabled:
