@@ -59,6 +59,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("runner", "运行模式"),
     ("model", "模型档位"),
     ("sandbox", "沙箱（权限）"),
+    ("policy", "自动策略"),
     ("steward", "管家"),
 )
 
@@ -98,6 +99,53 @@ SETTINGS: tuple[EditableSetting, ...] = (
             risky=True,
         )
         for role in ("constitution", "planner", "worker", "verifier", "acceptance", "steward")
+    ),
+    # ---------- 自动策略（P3-5）----------
+    #
+    # 这些开关的**实际效果**由 `app/auto_policy.py` 的判定函数决定；报告里会把
+    # 开关状态与"为什么没触发"一起列出来 —— 这正是要能分辨"没开"与"没到条件"。
+    EditableSetting(
+        key="auto_stop_on_consecutive_failure",
+        env="CODEX_BATTLEFIELD_AUTO_STOP_ON_CONSECUTIVE_FAILURE",
+        label="连续失败自动停",
+        kind="bool",
+        group="policy",
+        help=(
+            "同一节点反复失败到上限就停止重试并交给人。同一个节点用同样的提示词反复失败"
+            "几乎总是信息缺失（需求不清、环境缺东西），继续重试只会把信号埋掉。"
+        ),
+    ),
+    EditableSetting(
+        key="auto_consecutive_failure_limit",
+        env="CODEX_BATTLEFIELD_AUTO_CONSECUTIVE_FAILURE_LIMIT",
+        label="连续失败上限（次）",
+        kind="int",
+        group="policy",
+        minimum=1,
+        maximum=20,
+        help="与上一条配套。默认 3；设得太低会把正常的返工误判成'注定失败'。",
+    ),
+    EditableSetting(
+        key="auto_hibernate_when_idle",
+        env="CODEX_BATTLEFIELD_AUTO_HIBERNATE_WHEN_IDLE",
+        label="空闲自动休眠",
+        kind="bool",
+        group="policy",
+        help=(
+            "没有活跃与排队任务、且闲置超过超时阈值时挂起整树。树会长期停在'等人'的"
+            "状态（阻塞债、等额度），那时占着槽位与内存没有意义。"
+        ),
+    ),
+    EditableSetting(
+        key="auto_reclaim_stale_slots",
+        env="CODEX_BATTLEFIELD_AUTO_RECLAIM_STALE_SLOTS",
+        label="僵死槽位回收",
+        kind="bool",
+        group="policy",
+        help=(
+            "有活进程却长时间没有进度的槽位会被回收。少了它，几个僵死槽位会把并发额度"
+            "吃光，而看板上显示的是'在跑'。"
+        ),
     ),
     # ---------- 管家 ----------
     EditableSetting(

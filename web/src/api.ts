@@ -1,5 +1,6 @@
 import type {
   ApiRestartDrainResponse,
+  AutoPolicyReport,
   BudgetGuardResponse,
   ConstitutionResponse,
   CostReport,
@@ -193,6 +194,21 @@ export async function saveSettings(
       detail = await response.text();
     }
     throw new Error(detail || '保存失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 自动策略的当前判定（P3-5）。
+ *
+ * **只判定、不执行**：动作由编排层做，界面只负责让"保护在不在"看得见。
+ * 没有树时也会 200 返回（只报开关状态）—— 空工程上面板不该整个消失。
+ */
+export async function fetchAutoPolicy(rootId?: string): Promise<AutoPolicyReport> {
+  const query = rootId ? `?root_id=${encodeURIComponent(rootId)}` : '';
+  const response = await fetch(`/api/auto-policy${query}`);
+  if (!response.ok) {
+    throw new Error('自动策略读取失败：' + response.status);
   }
   return response.json();
 }

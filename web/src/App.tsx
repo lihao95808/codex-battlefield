@@ -57,6 +57,7 @@ import {
 import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
 import { CostPanel } from './CostPanel';
+import { PolicyPanel } from './PolicyPanel';
 import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
@@ -1367,6 +1368,8 @@ export function App() {
         <CrossProjectPanel />
 
         <CostPanel />
+
+        <PolicyPanel />
 
         <StateAdminPanel />
 

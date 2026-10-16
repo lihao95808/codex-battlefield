@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import (
+    auto_policy,
     cost as cost_mod,
     cross_project,
     diagnostics as diagnostics_mod,
@@ -448,6 +449,66 @@ def get_cost(
     if not resolved:
         raise HTTPException(status_code=404, detail="还没有任何任务树，没有可归因的花费。")
     return cost_mod.cost_report(db, resolved)
+
+
+def _recent_run_statuses(db: Session, settings) -> list[str]:
+    """最近若干次运行的状态，**时序（最旧 → 最新）**。
+
+    按时序是关键：自动策略用 `[-WINDOW:]` 取"最近一个窗口"，传倒序会让它盯着
+    **最早**那几次 —— 一次早期失败会永久把并发压低，而报告写的是"最近 N 次无一成功"。
+    实测这条写反过（用例当场红），所以正序在函数名与注释里都写明。
+    """
+    from sqlalchemy import select as _select
+
+    from .models import RunRecord
+
+    limit = max(120, auto_policy.DIMINISHING_WINDOW)
+    rows = db.execute(
+        _select(RunRecord.status).order_by(RunRecord.id.desc()).limit(limit)
+    ).all()
+    return [str(row[0]) for row in reversed(rows)]
+
+
+@app.get("/api/auto-policy")
+def get_auto_policy(
+    root_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """**自动策略**的当前判定（P3-5）。
+
+    回答三个原来无处可查的问题：有哪几条自动策略、各自开着吗、上一次为什么
+    触发/没触发。**包括没触发的策略** —— 只报"触发了什么"的话，用户分不清
+    "这条策略没开"与"开着但没到条件"，而前者意味着他以为有保护其实没有。
+
+    本端点**只判定、不执行**：动作由编排层执行既有方法，避免出现第二套并发控制。
+    同步端点（纯读 + 纯计算），不需要事件循环。
+    """
+    settings = orchestrator.settings
+    resolved = root_id or _latest_root_id(db)
+    if not resolved:
+        # 没有树时也要能报告"策略开着、只是没条件可判" —— 报 404 会让面板
+        # 在空工程上整个消失，而用户正是想确认那些保护在不在。
+        observation = auto_policy.observation_from_settings(settings)
+        report = auto_policy.report(observation)
+        report["root_id"] = None
+        report["note"] = "还没有任务树；只报告开关状态。" + report["note"]
+        return report
+    observation = auto_policy.observe(
+        orchestrator.get_tree(db, root_id=resolved),
+        recent_statuses=_recent_run_statuses(db, orchestrator.settings),
+        settings=settings,
+    )
+    report = auto_policy.report(observation)
+    report["root_id"] = resolved
+    report["observed"] = {
+        key: observation.get(key)
+        for key in (
+            "auto_consecutive_failure_limit",
+            "idle_hibernate_seconds",
+            "auto_concurrency_min",
+        )
+    }
+    return report
 
 
 @app.post("/api/state/migrate")

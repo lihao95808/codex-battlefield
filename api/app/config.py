@@ -351,6 +351,32 @@ class Settings:
         )
     )
     auto_concurrency_queue_threshold: int = int(os.getenv("CODEX_BATTLEFIELD_AUTO_CONCURRENCY_QUEUE_THRESHOLD", "6"))
+
+    # ---- 自动策略（P3-5）----
+    #
+    # 三条新策略的开关。**默认全开**：它们的作用是"别把额度烧在注定失败的重复上"，
+    # 关掉是主动选择（要显式改配置），而不是默认状态。
+    #
+    # 为什么必须能被配置文件读到（而不是只认环境变量）：设置面板要能列出来、
+    # 看门狗那个独立进程也要能看到 —— 只认环境变量时，独立进程会退回默认值，
+    # 表现是"面板里关了、守护进程照旧"，极难归因（`_env_or_config` 的注释里
+    # 记着这类事故）。
+    auto_stop_on_consecutive_failure: bool = _env_truthy_default_true(
+        "CODEX_BATTLEFIELD_AUTO_STOP_ON_CONSECUTIVE_FAILURE", "auto_stop_on_consecutive_failure"
+    )
+    auto_hibernate_when_idle: bool = _env_truthy_default_true(
+        "CODEX_BATTLEFIELD_AUTO_HIBERNATE_WHEN_IDLE", "auto_hibernate_when_idle"
+    )
+    auto_reclaim_stale_slots: bool = _env_truthy_default_true(
+        "CODEX_BATTLEFIELD_AUTO_RECLAIM_STALE_SLOTS", "auto_reclaim_stale_slots"
+    )
+    # 同一个节点连续失败到这个次数就停止重试（P3-5）。0 = 用内置默认。
+    auto_consecutive_failure_limit: int = int(
+        _env_or_config(
+            "CODEX_BATTLEFIELD_AUTO_CONSECUTIVE_FAILURE_LIMIT", "auto_consecutive_failure_limit"
+        )
+        or 3
+    )
     auto_concurrency_resource_cooldown_seconds: int = int(
         os.getenv("CODEX_BATTLEFIELD_AUTO_CONCURRENCY_RESOURCE_COOLDOWN_SECONDS", "900")
     )

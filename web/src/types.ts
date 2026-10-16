@@ -675,6 +675,35 @@ export interface CostAttribution {
   by_node: CostBucket[];
 }
 
+/** 一条自动策略的当前判定（`GET /api/auto-policy`，P3-5）。 */
+export interface AutoPolicyItem {
+  id: string;
+  label: string;
+  /** 为什么这条策略存在。 */
+  rationale: string;
+  /** 设置里的开关名 —— 报告里要能看到"这条为什么没触发"。 */
+  switch: string;
+  enabled: boolean;
+  action: string;
+  fired: boolean;
+  reason: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AutoPolicyReport {
+  policies: AutoPolicyItem[];
+  fired_count: number;
+  fired: string[];
+  /** 被关掉的策略 —— 这正是"以为有保护其实没有"的那种状态。 */
+  disabled: string[];
+  note: string;
+  root_id?: string | null;
+  observed?: Record<string, unknown>;
+}
+
+/** 面板上的三态。**关闭优先于触发**（关了就永远不会触发）。 */
+export type PolicyStatus = 'disabled' | 'fired' | 'idle';
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */
