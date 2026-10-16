@@ -139,7 +139,20 @@ def _run_case(
     hold_seconds: float,
     blocker_hold_seconds: float,
 ) -> tuple[Path, list[subprocess.Popen]]:
-    """`waiters` 是 (权重, 相对开局的延迟秒, 自己持槽秒)。返回日志路径与**尚未收割**的进程列表。"""
+    """`waiters` 是 (权重, 相对开局的延迟秒, 自己持槽秒)。返回日志路径与**尚未收割**的进程列表。
+
+    ⚠️ 这些等待窗口是**时间预算**的一部分，不是断言的一部分（2026-10-17 收窄）：
+
+    * 阻塞者的持有时长只需覆盖"最后一个等待者到场"（延迟最大 3.0s / 老化那条 5.0s），
+      所以 8.0 → **4.0**、12.0 → **7.0**（仍留 1.0–2.0s 余量）；
+    * 等待者拿到槽后自己持有 2.0 → **1.0** 秒：它只影响"下一名何时能拿"，
+      不影响排名（排名看的是 `since` 与老化，而老化由**阻塞者**的持有窗口提供）。
+
+    实测：本文件串行 **79.9s → 54.7s**（−31%），连跑 3 次全绿（54.7 / 56.7 / 54.7）。
+    为什么值得改：这 5 条是本机最慢的一簇，也是 Linux CI"30 分钟跑不完"的主要嫌疑之一
+    —— 门禁跑不完时，减等待比调大超时更根本。余量刻意留着：老化那条仍给出
+    4 秒老化 vs 2 点静态权重（差值 2）。
+    """
     case_dir = tmp_path / name
     case_dir.mkdir(parents=True, exist_ok=True)
     wrapper_script = _wrapper_script(case_dir)
@@ -182,9 +195,9 @@ def test_higher_role_weight_gets_the_freed_slot_first(tmp_path: Path) -> None:
         "priority",
         priority_enabled=True,
         aging_seconds=3600,
-        waiters=[(0, 1.0, 2.0), (2, 1.2, 2.0), (1, 1.4, 2.0)],
+        waiters=[(0, 1.0, 1.0), (2, 1.2, 1.0), (1, 1.4, 1.0)],
         hold_seconds=2.0,
-        blocker_hold_seconds=8.0,
+        blocker_hold_seconds=4.0,
     )
     assert [weight for weight, _pid in _settle(processes, log_path)] == [2, 1, 0]
 
@@ -196,9 +209,9 @@ def test_aging_lets_a_long_waiting_low_weight_win(tmp_path: Path) -> None:
         "aging",
         priority_enabled=True,
         aging_seconds=1,
-        waiters=[(0, 1.0, 2.0), (2, 6.0, 2.0)],
+        waiters=[(0, 1.0, 1.0), (2, 5.0, 1.0)],
         hold_seconds=2.0,
-        blocker_hold_seconds=12.0,
+        blocker_hold_seconds=7.0,
     )
     assert [weight for weight, _pid in _settle(processes, log_path)] == [0, 2]
 
@@ -214,9 +227,9 @@ def test_priority_disabled_keeps_everyone_eligible(tmp_path: Path) -> None:
         "disabled",
         priority_enabled=False,
         aging_seconds=1,
-        waiters=[(0, 1.0, 2.0), (3, 3.0, 2.0)],
+        waiters=[(0, 1.0, 1.0), (3, 3.0, 1.0)],
         hold_seconds=2.0,
-        blocker_hold_seconds=8.0,
+        blocker_hold_seconds=4.0,
     )
     settled = _settle(processes, log_path)
     assert sorted(weight for weight, _pid in settled) == [0, 3], settled
@@ -368,9 +381,9 @@ def test_same_weight_stays_first_come_first_served(tmp_path: Path) -> None:
         "same-weight",
         priority_enabled=True,
         aging_seconds=3600,
-        waiters=[(0, 1.0, 2.0), (0, 3.0, 2.0)],
+        waiters=[(0, 1.0, 1.0), (0, 3.0, 1.0)],
         hold_seconds=2.0,
-        blocker_hold_seconds=8.0,
+        blocker_hold_seconds=4.0,
     )
     settled = _settle(processes, log_path)
     assert [order for _weight, order in settled] == [1, 2]
