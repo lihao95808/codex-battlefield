@@ -110,6 +110,31 @@ def _env_float_or_config(env_name: str, config_key: str, default: float) -> floa
     return default
 
 
+def _env_truthy_default_true(env_name: str, config_key: str) -> bool:
+    """布尔档位，**默认真**：环境变量优先，其次配置文件，都没有则 `True`。
+
+    为什么不能直接用 `_env_truthy`：那个是"默认关"的语义。`steward_read_only`
+    的旧实现是 `os.getenv(..., "1").lower() not in {...}` —— 默认**开**。
+    换成 `_env_truthy` 后，未配置时它返回 `False`，也就是**静默把只读关掉了**。
+    实测就是这么把三个只读判据弄红的。而"管家默认只读"是用户有意选的权限取舍，
+    默认值翻转属于安全问题，不是普通的默认值差异 —— 所以单独给一个函数，
+    让这个"默认真"的意图留在类型和名字里，而不是散在条件表达式中。
+    """
+    from_env = os.getenv(env_name, "").strip()
+    if from_env:
+        return from_env.lower() in {"1", "true", "yes", "on"}
+    try:
+        data = tomllib.loads(config_file().read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return True
+    value = data.get(config_key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return True
+
+
 def machine_root_of(settings: object) -> Path:
     """取"机器级状态落点"，对**鸭子类型**的 settings 也成立。
 
@@ -140,45 +165,64 @@ class Settings:
     codex_bin: str = os.getenv("CODEX_BATTLEFIELD_CODEX_BIN", "codex")
     codex_home: str = os.getenv("CODEX_BATTLEFIELD_CODEX_HOME", "")
     codex_profile: str = os.getenv("CODEX_BATTLEFIELD_CODEX_PROFILE", "")
-    codex_model: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL", "")
+    codex_model: str = _env_or_config("CODEX_BATTLEFIELD_CODEX_MODEL", "codex_model")
     codex_reasoning_effort: str = os.getenv("CODEX_BATTLEFIELD_CODEX_REASONING_EFFORT", "")
     # 按角色分层（`docs/spec-verification-independence.md` §4）：`kind` 有独立档位时优先，空则回退全局。
     # 这是"用便宜模型当 worker/verifier、用强模型当 acceptance/constitution"的唯一入口——
     # 也是"flash 级模型能不能吃大工程"的前提之一。
-    codex_model_constitution: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_CONSTITUTION", "")
-    codex_model_planner: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_PLANNER", "")
-    codex_model_worker: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_WORKER", "")
-    codex_model_verifier: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_VERIFIER", "")
-    codex_model_acceptance: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_ACCEPTANCE", "")
+    #
+    # **也读用户配置文件**（P2-2 运行时配置面板）：否则界面上改了它、重启了也不生效，
+    # 而"改了没用"是最容易让用户白忙一场的失效形态。
+    codex_model_constitution: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_CONSTITUTION", "codex_model_constitution"
+    )
+    codex_model_planner: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_PLANNER", "codex_model_planner"
+    )
+    codex_model_worker: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_WORKER", "codex_model_worker"
+    )
+    codex_model_verifier: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_VERIFIER", "codex_model_verifier"
+    )
+    codex_model_acceptance: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_ACCEPTANCE", "codex_model_acceptance"
+    )
     # ---- 管家（steward）：常驻的全局对话 agent（`docs/spec-steward.md`）----
     # 专用档位。默认**跟 acceptance 同级**：管家做的是判断与沟通，值得用好模型；
     # 但它自己的档位独立可配，不至于为了管家把全局模型改掉。
-    codex_model_steward: str = os.getenv("CODEX_BATTLEFIELD_CODEX_MODEL_STEWARD", "")
+    codex_model_steward: str = _env_or_config(
+        "CODEX_BATTLEFIELD_CODEX_MODEL_STEWARD", "codex_model_steward"
+    )
     codex_reasoning_effort_steward: str = os.getenv(
         "CODEX_BATTLEFIELD_CODEX_REASONING_EFFORT_STEWARD", ""
     )
     # 管家第一版**只读**：能看、能说、能建议，但不能动树。
     # 理由：它跑在与状态同权限的位置，“能改”就意味着能改坏状态；
     # 先让它证明判断可靠，再逐级放开（spec-steward §权限）。
-    steward_read_only: bool = os.getenv("CODEX_BATTLEFIELD_STEWARD_READ_ONLY", "1").lower() not in {
-        "0",
-        "false",
-        "no",
-    }
+    steward_read_only: bool = _env_truthy_default_true(
+        "CODEX_BATTLEFIELD_STEWARD_READ_ONLY", "steward_read_only"
+    )
     # ---- 管家的主动推送（`docs/spec-steward.md` §7）----
     # 推送是**拉取式 + 轮询评估**：不是每来一个事件就推，而是按这个间隔重新评估
     # 提醒集合。为什么不做成纯事件驱动：提醒的判定要读库、算快照，成本比一次比较高；
     # 而"有节点失败"这类信号本来就不需要毫秒级延迟。
-    steward_stream_interval_seconds: float = float(
-        os.getenv("CODEX_BATTLEFIELD_STEWARD_STREAM_INTERVAL_SECONDS", "5")
+    steward_stream_interval_seconds: float = _env_float_or_config(
+        "CODEX_BATTLEFIELD_STEWARD_STREAM_INTERVAL_SECONDS",
+        "steward_stream_interval_seconds",
+        5.0,
     )
     # 只有达到这个等级的提醒才会被推送。默认 `action`（唯一需要用户动手的那种）：
     # 把参考信息也弹出来，会把真正要动手的那条淹掉。
-    steward_push_min_level: str = os.getenv("CODEX_BATTLEFIELD_STEWARD_PUSH_MIN_LEVEL", "action")
+    steward_push_min_level: str = _env_or_config(
+        "CODEX_BATTLEFIELD_STEWARD_PUSH_MIN_LEVEL", "steward_push_min_level"
+    ) or "action"
     # 两次推送之间的最小间隔。作用不是省流量，而是**防止用户对提醒脱敏**：
     # 频繁的提醒等于没有提醒。
-    steward_push_throttle_seconds: float = float(
-        os.getenv("CODEX_BATTLEFIELD_STEWARD_PUSH_THROTTLE_SECONDS", "30")
+    steward_push_throttle_seconds: float = _env_float_or_config(
+        "CODEX_BATTLEFIELD_STEWARD_PUSH_THROTTLE_SECONDS",
+        "steward_push_throttle_seconds",
+        30.0,
     )
     # ---- 管家的主动汇报（`docs/spec-steward.md` §9）----
     # 开不开"不等用户问就自己开口"。默认**关**：

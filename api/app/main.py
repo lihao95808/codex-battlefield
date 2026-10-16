@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from . import (
     diagnostics as diagnostics_mod,
+    settings_registry,
     obligation_index,
     steward,
     steward_actions,
@@ -38,10 +39,11 @@ from .project_store import (
     validate_project_root,
     worktree_drive_matches,
 )
-from .state_layout import read_active_project
+from .state_layout import config_file, read_active_project, set_config_value
 from .steward_capabilities import catalog as steward_catalog
 from .steward_status import build_status as build_steward_status
 from .schemas import (
+    SettingsUpdateRequest,
     BindProjectRequest,
     ApiRestartDrainResponse,
     BudgetGuardRequest,
@@ -315,6 +317,85 @@ def bind_project(payload: BindProjectRequest) -> dict:
         "restart_required": needs_restart,
         "warnings": warnings,
         "message": "已绑定。" + ("".join(warnings) if warnings else "API 本来就连着它。"),
+    }
+
+
+@app.get("/api/settings")
+def get_settings_catalog() -> dict:
+    """可编辑设置的登记表 + **当前生效值** + 每项来自哪里（P2-2）。
+
+    为什么报"来源"而不只报值：优先级是「环境变量 > 用户配置文件 > 内置默认」。
+    一项若被环境变量压着，在界面上改它**不会有任何效果** —— 不把这件事说出来，
+    用户就会掉进"我改了、保存了、重启了，怎么还是旧的"。
+    """
+    settings = orchestrator.settings
+    return {
+        "groups": settings_registry.group_labels(),
+        "order": [group for group, _ in settings_registry.GROUPS],
+        "fields": settings_registry.catalog(),
+        "current": settings_registry.resolve_current(settings),
+        "restart_required": settings_registry.restart_required(),
+        "config_file": str(config_file()),
+    }
+
+
+@app.post("/api/settings")
+def update_settings(payload: SettingsUpdateRequest) -> dict:
+    """把可编辑设置写进**用户配置文件**（P2-2）。
+
+    三条硬规矩：
+
+    1. **不在登记表里的键直接拒绝**，不静默忽略 —— 静默会让用户以为改成功了。
+    2. **危险项要二次确认**（`confirm_risky`）：放宽沙箱或打开主动汇报都是
+       "点一下下拉框就生效"的动作，事后很难归因。
+    3. 先**全部**校验再落盘：一项非法就整批不写。分批写会留下
+       "一半改了、一半没改"的状态，而用户只看到一条错误。
+    """
+    _ensure_mutable()
+
+    unknown = settings_registry.unknown_keys(list(payload.values))
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"这些键不可编辑：{', '.join(sorted(unknown))}\n"
+                "  只有登记表里的项可以改（GET /api/settings 能看到清单）。"
+            ),
+        )
+
+    prepared: dict[str, Any] = {}
+    risky_touched: list[str] = []
+    for key, raw in payload.values.items():
+        item = settings_registry.BY_KEY[key]
+        try:
+            prepared[key] = settings_registry.coerce(item, raw)
+        except settings_registry.SettingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if item.risky:
+            risky_touched.append(item.label)
+
+    if risky_touched and not payload.confirm_risky:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "这些是危险项，需要二次确认："
+                + "、".join(risky_touched)
+                + "。确认后请带 confirm_risky=true 重发。"
+            ),
+        )
+
+    for key, value in prepared.items():
+        set_config_value(key, value)
+
+    return {
+        "status": "saved",
+        "changed": sorted(prepared),
+        "config_file": str(config_file()),
+        "restart_required": settings_registry.restart_required(),
+        "message": (
+            "已写入用户配置文件。**重启 API 后生效** —— 设置是启动时读入的，"
+            "当前进程仍在用旧值。"
+        ),
     }
 
 

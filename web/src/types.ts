@@ -492,3 +492,45 @@ export interface TaskDetailResponse {
   events: BattlefieldEvent[];
   usage?: TreeUsage;
 }
+
+/** 一项可编辑设置（GET /api/settings 的 fields[]）。 */
+export interface SettingField {
+  key: string;
+  env: string;
+  label: string;
+  kind: 'str' | 'int' | 'float' | 'bool';
+  group: string;
+  help: string;
+  /** 会放宽权限或增加开销 —— 界面要二次确认。 */
+  risky: boolean;
+  choices: string[];
+  minimum: number | null;
+  maximum: number | null;
+}
+
+/** 一项的当前生效值与来源。source 是 env|config|default。 */
+export interface SettingCurrent {
+  value: unknown;
+  source: 'env' | 'config' | 'default' | string;
+  /** 被环境变量压着时为真 —— 此时在界面上改它**不会有效果**。 */
+  env_override: boolean;
+  file_value: string | null;
+}
+
+export interface SettingsResponse {
+  groups: Record<string, string>;
+  order: string[];
+  fields: SettingField[];
+  current: Record<string, SettingCurrent>;
+  /** 恒为真：Settings 是启动时构造一次的 frozen dataclass。 */
+  restart_required: boolean;
+  config_file: string;
+}
+
+export interface SettingsSaveResponse {
+  status: string;
+  changed: string[];
+  config_file: string;
+  restart_required: boolean;
+  message: string;
+}

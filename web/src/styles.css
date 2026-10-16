@@ -2952,6 +2952,186 @@ select:focus {
   }
 }
 
+/* ===== 运行时配置面板（P2-2）=====
+   两类信息必须一眼可见，否则用户会白忙：
+     * 被环境变量压着的项 —— 改了没用；
+     * 危险项 —— 会放宽权限。 */
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #6b7a90;
+  border-radius: 8px;
+}
+
+.cfg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cfg-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* "改完要重启" —— 这条不说，用户会以为保存即生效。 */
+.cfg-restart {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+}
+
+.cfg-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #6b7a90;
+  word-break: break-all;
+}
+
+.cfg-hint code {
+  font-size: 10px;
+  background: #f2f4f7;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.cfg-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #822727;
+  background: #fdeeee;
+  border: 1px solid #e9c2c2;
+  border-radius: 6px;
+  padding: 5px 8px;
+  white-space: pre-wrap;
+}
+
+.cfg-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #24446e;
+  background: #eaf1fa;
+  border: 1px solid #c3d6ec;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.cfg-group {
+  font-size: 12px;
+}
+
+.cfg-group > summary {
+  cursor: pointer;
+  color: #33455c;
+  font-weight: 600;
+  padding: 3px 0;
+}
+
+.cfg-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 2px 8px;
+}
+
+.cfg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 改动过的项标一下：一眼看出"这次要提交哪些"。 */
+.cfg-field-dirty {
+  border-left: 2px solid #3f6ea8;
+  padding-left: 6px;
+}
+
+.cfg-field-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cfg-label {
+  font-size: 12px;
+  color: #33455c;
+}
+
+.cfg-risky {
+  font-size: 10px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  color: #822727;
+  background: #fdeeee;
+  border: 1px solid #e9c2c2;
+}
+
+.cfg-env {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+}
+
+.cfg-input,
+.cfg-select {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #cfd8e3;
+  border-radius: 6px;
+  width: 100%;
+}
+
+.cfg-check {
+  align-self: flex-start;
+  width: 15px;
+  height: 15px;
+}
+
+.cfg-help {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8895a8;
+}
+
+.cfg-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cfg-save {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid #3f6ea8;
+  background: #3f6ea8;
+  color: #fff;
+  cursor: pointer;
+}
+
+.cfg-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ===== 运行记录与产物查看器（P2-3）=====
    "这一步为什么错了"是最高频的排障动作。所以失败必须是这一块里最显眼的东西，
    而不是无数行等宽文字中的一行。 */

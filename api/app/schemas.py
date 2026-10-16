@@ -161,6 +161,22 @@ class ProjectStartResponse(BaseModel):
     status: str
 
 
+class SettingsUpdateRequest(BaseModel):
+    """修改可编辑设置（`POST /api/settings`）。
+
+    `values` 是要写的键值对；不在登记表里的键会被**拒绝**（而不是静默忽略）——
+    静默忽略会让用户以为改成功了。
+
+    `confirm_risky` 是危险项的二次确认：改动会放宽权限或显著增加开销时，
+    必须显式带上，否则拒绝。这道闸防的是"手滑点了一个下拉框就把沙箱降级了"。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    values: dict[str, Any] = Field(default_factory=dict)
+    confirm_risky: bool = False
+
+
 class HibernateRequest(BaseModel):
     resume_after_seconds: int = Field(default=18_000, ge=60, le=604_800)
     reason: str = "等待 Codex/token 池刷新后自动恢复"

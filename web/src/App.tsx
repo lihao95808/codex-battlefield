@@ -57,6 +57,7 @@ import {
 import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
 import { RunInspector } from './RunInspector';
+import { SettingsPanel } from './SettingsPanel';
 import { StewardPanel } from './StewardPanel';
 import {
   constitutionBoardFromStats,
@@ -1358,6 +1359,8 @@ export function App() {
         <ProjectOnboarding onBound={() => loadTree().catch(() => undefined)} />
 
         <RunInspector taskId={selectedId} />
+
+        <SettingsPanel />
 
         <StewardPanel layout={layoutState} onOpen={() => loadTree().catch(() => undefined)} />
 

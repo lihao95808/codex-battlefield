@@ -6,6 +6,8 @@ import type {
   RunArtifactResponse,
   BindProjectResponse,
   MountedProjectsResponse,
+  SettingsResponse,
+  SettingsSaveResponse,
   StateLayoutResponse,
   StewardActionDecision,
   StewardActionsResponse,
@@ -147,6 +149,48 @@ export function subscribeStewardAlerts(
  * 绑不绑工程都要能拿到（未绑定时后端只回机器级字段并带 `bound: false`），
  * 所以不把它当成"可能失败的附加信息"——它是诊断入口。
  */
+/**
+ * 可编辑设置的登记表 + 当前生效值 + 每项来自哪里（P2-2）。
+ *
+ * 后端会一并回报来源：被环境变量压着的项在界面上改**不会有效果**，
+ * 这一点必须让用户看见，否则他会反复保存、反复重启、反复疑惑。
+ */
+export async function fetchSettings(): Promise<SettingsResponse> {
+  const response = await fetch('/api/settings');
+  if (!response.ok) {
+    throw new Error('设置读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 保存设置到用户配置文件。
+ *
+ * confirmRisky 对应后端的二次确认：危险项（放宽沙箱、打开主动汇报…）
+ * 不带它会被 409 拒绝 —— 那道闸防的是点一下下拉框就生效。
+ */
+export async function saveSettings(
+  values: Record<string, string>,
+  confirmRisky: boolean,
+): Promise<SettingsSaveResponse> {
+  const response = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values, confirm_risky: confirmRisky }),
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? '';
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || '保存失败：' + response.status);
+  }
+  return response.json();
+}
+
 export async function fetchStateLayout(): Promise<StateLayoutResponse> {
   const response = await fetch('/api/state');
   if (!response.ok) {
