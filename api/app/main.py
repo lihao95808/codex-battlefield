@@ -11,12 +11,13 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from . import (
+    diagnostics as diagnostics_mod,
     obligation_index,
     steward,
     steward_actions,
@@ -315,6 +316,38 @@ def bind_project(payload: BindProjectRequest) -> dict:
         "warnings": warnings,
         "message": "已绑定。" + ("".join(warnings) if warnings else "API 本来就连着它。"),
     }
+
+
+@app.get("/api/diagnostics")
+def diagnostics(format: str = Query(default="md", pattern="^(md|json)$")) -> Response:
+    """一键导出**诊断包**（P2-4）。
+
+    为什么做成一个下载端点而不是让用户去凑：出问题时最常见的成本不是修，
+    而是**来回问** —— "API 起了吗""看门狗注册了吗""配置里写了什么"。
+    这个工具的状态散在状态根、配置文件、计划任务、本地代理、日志好几处，
+    与其每次让用户敲命令复制粘贴，不如一次收齐。
+
+    **返回的文本已脱敏**（`app/diagnostics.py` 的 `redact`）：凭据值一律替换，
+    只留变量名 —— 排障要看的是"有没有配"，不是值。环境变量也只收集白名单键名，
+    绝不 dump 整个 `os.environ`（那里面可能有与本工具无关的公司凭据）。
+    """
+    payload = diagnostics_mod.collect(orchestrator.settings)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    if format == "json":
+        body = diagnostics_mod.render_json(payload)
+        media = "application/json; charset=utf-8"
+    else:
+        body = diagnostics_mod.render_markdown(payload)
+        media = "text/markdown; charset=utf-8"
+    return Response(
+        content=body,
+        media_type=media,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="codex-battlefield-diagnostics-{stamp}.{format}"'
+            ),
+        },
+    )
 
 
 @app.get("/api/steward/status")

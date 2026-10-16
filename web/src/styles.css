@@ -3385,6 +3385,22 @@ select:focus {
   align-self: flex-start;
 }
 
+/* 导出诊断包。做得像次要动作（它是排障用的），但必须够显眼能被找到。 */
+.steward-diagnostics {
+  align-self: flex-start;
+  font-size: 12px;
+  color: #3f6ea8;
+  text-decoration: none;
+  border-bottom: 1px dashed #9fb8d4;
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+
+.steward-diagnostics:hover {
+  color: #24446e;
+  border-bottom-style: solid;
+}
+
 /* ===== 管家 · 主动提醒 =====
    这些是**服务端规则**判出来的信号（有阻塞、有失败、树被截断…），
    不是管家随口说的。视觉上刻意做得比对话轻：它是提示，不是内容。 */

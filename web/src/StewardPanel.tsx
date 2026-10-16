@@ -545,6 +545,21 @@ export function StewardPanel({
           重新读取状态
         </button>
       )}
+      {/*
+        一键导出诊断包（P2-4）。放在管家面板底部，因为"它不对劲"的时候
+        用户会先来跟管家说话；而排障需要的东西散在状态根/配置/计划任务/日志好几处，
+        让用户去凑就是来回问。
+        用普通链接而不是 fetch+blob：服务端已经设了 Content-Disposition，
+        浏览器原生下载最省事，也不会把整包内容读进内存。
+      */}
+      <a
+        className="steward-diagnostics"
+        href="/api/diagnostics?format=md"
+        download
+        title="下载状态快照、配置、日志尾部（凭据值已脱敏）"
+      >
+        导出诊断包
+      </a>
     </section>
   );
 }
