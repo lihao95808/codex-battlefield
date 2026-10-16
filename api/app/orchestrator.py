@@ -5504,11 +5504,19 @@ class Orchestrator:
         snapshot_dir = Path(self.settings.workspace_dir) / "state_snapshots" / root_id
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         latest_path = snapshot_dir / "latest.json"
-        latest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        # **原子写 + 留一份备份**（P5-6）：`latest.json` 是还原锚点，而进程可能在写它的
+        # 中途被杀（断电 / taskkill / 容器被杀）。`write_text` 是"截断后写"，
+        # 半截 JSON 解不出来 —— 于是"表被清空"那条通路恰好在最需要它的时候失效，
+        # 而且**静默失效**。见 `checkpoint.atomic_write_json`。
+        checkpoint.atomic_write_json(latest_path, payload)
         if keep_history:
             stamp = utcnow().strftime("%Y%m%dT%H%M%S%fZ")
             history_path = snapshot_dir / f"{stamp}-{reason.replace('.', '-')}.json"
-            history_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            try:
+                checkpoint.atomic_write_json(history_path, payload)
+            except OSError:
+                # 历史快照是**尽力而为**：它写不上不该让主锚点的写成功被抹掉。
+                pass
         return latest_path
 
     def _maybe_write_full_checkpoint(self, db: Session, root_id: str, reason: str) -> Path | None:

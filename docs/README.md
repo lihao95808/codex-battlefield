@@ -17,6 +17,7 @@
 | [`steward-delivery.md`](steward-delivery.md) | 目标投递与进度：为什么不做后台推送、四条"不编"的规矩、`get_tree` 没有 `root_id` 那个坑 |
 | [`observability.md`](observability.md) | 端点耗时与关联 ID：实测基线、为什么分位数是滑动窗口、失败请求为什么也要计量 |
 | [`data-retention.md`](data-retention.md) | 数据保留：三种东西三种待遇、为什么必须先列"不能删什么"、锚点为什么永不清理 |
+| [`crash-injection.md`](crash-injection.md) | 崩溃注入：还原锚点为什么必须原子写、`.backup` 怎么救回第一次写、源级判据要断完整调用 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
 | [`bilingual-ui.md`](bilingual-ui.md) | 界面双语与术语表：覆盖范围怎么声明、8 条不变量是什么、加语言/加文案的操作顺序 |
