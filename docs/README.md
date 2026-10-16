@@ -8,6 +8,7 @@
 |---|---|
 | [`../README.md`](../README.md) | 安装、5 分钟上手（模拟 runner，不需要 Codex CLI）、跑测试、配置速查 |
 | [`usage-accounting.md`](usage-accounting.md) | token/费用是怎么统计与展示的 |
+| [`cost-accounting.md`](cost-accounting.md) | 花费归因与成本预测的口径：四类"读不到"怎么分辨、预测为什么给区间、`blocked` 为什么不算样本 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
 | [`bilingual-ui.md`](bilingual-ui.md) | 界面双语与术语表：覆盖范围怎么声明、8 条不变量是什么、加语言/加文案的操作顺序 |
