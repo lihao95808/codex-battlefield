@@ -22,6 +22,7 @@ from .config import ROOT_DIR, Settings, machine_root_of
 from . import runner_tools
 from . import project_context, prompts
 from . import retry
+from . import trace
 from .models import TaskNode
 from .schemas import AcceptanceResult, ChildTaskSpec, PlannerDecision, VerifierResult, WorkerResult
 from .utils import loads, repair_mojibake
@@ -1649,6 +1650,13 @@ class CodexExecRunner(BaseCodexRunner):
                 "CODEX_BATTLEFIELD_SKILL_KM_URL": self.settings.skill_km_url,
             }
         )
+        # P5-5：把当前请求的关联 ID 传进子进程。子进程（以及它调的工具脚本）读同一个名字，
+        # 于是"界面上的那个 id"和"产物里的那个 id"能对上。
+        # **没有就不写**（不塞空串）：下游按"变量不存在 = 不关联"处理，
+        # 而空串会被读成"有关联但 id 是空的"。
+        request_id = trace.current_request_id()
+        if request_id:
+            env[trace.ENV_NAME] = request_id
         # 隔离 config.toml 里 env_key 指名的变量必须存在，否则 codex 直接
         # `Missing environment variable` 失败（实测）。补占位值，见该方法注释。
         self._ensure_provider_env_key(env)

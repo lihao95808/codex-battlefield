@@ -134,6 +134,7 @@ def _sqlite_column_additions() -> dict[str, dict[str, str]]:
             "constitution_hash": "VARCHAR(80)",
             "constitution_version": "INTEGER",
             "usage_json": "TEXT",
+            "request_id": "VARCHAR(64)",
         },
         "constitutions": {
             "supersedes_id": "VARCHAR(40)",

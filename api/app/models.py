@@ -134,6 +134,10 @@ class RunRecord(Base):
     constitution_hash: Mapped[str | None] = mapped_column(String(80), nullable=True)
     constitution_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # P5-5：**发起这次运行的 HTTP 请求**的关联 ID。
+    # 为 NULL 表示"这次运行不是某个请求触发的"（树跑起来之后的调度就是这样），
+    # **不是**"忘了记" —— 所以它可空，且不填假值。见 app/trace.py 的覆盖边界。
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

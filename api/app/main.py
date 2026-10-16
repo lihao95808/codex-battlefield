@@ -37,6 +37,7 @@ from . import (
     steward,
     steward_actions,
     steward_proactive,
+    trace,
 )
 from . import steward_alerts as steward_alerts_mod
 from .config import ROOT_DIR, machine_path_of
@@ -201,6 +202,10 @@ async def _measure_requests(request: Request, call_next):  # type: ignore[no-unt
     """
     inbound = request.headers.get(metrics_mod.REQUEST_ID_HEADER, "").strip()
     request_id = inbound or metrics_mod.new_request_id()
+    # P5-5：把 id 放进**进程内的上下文**，好让这条请求触发的运行（`RunRecord`）与
+    # 它派生的 Codex 子进程都用同一个 id。`contextvars` 在 asyncio 任务里是复制的，
+    # 所以后台任务看不到它 —— 那是**已知边界**，不是 bug（见 `app/trace.py`）。
+    token = trace.set_request_id(request_id)
     # 路由模板要等 `call_next` 之后才在 `request.scope` 里（路由匹配那一刻才填）。
     recorder = metrics_mod.Recorder("pending")
     status = 500
@@ -220,6 +225,8 @@ async def _measure_requests(request: Request, call_next):  # type: ignore[no-unt
             )
         except Exception:  # noqa: BLE001 - 指标绝不能盖住业务异常
             pass
+        # 异常路径也要恢复上下文，否则这条请求的 id 会留在 worker 上（见下面成功的路径）。
+        trace.reset_request_id(token)
         raise
     try:
         route = request.scope.get("route")
@@ -233,6 +240,9 @@ async def _measure_requests(request: Request, call_next):  # type: ignore[no-unt
         )
     except Exception:  # noqa: BLE001 - 指标失败不影响响应
         pass
+    # 请求结束就把上下文里的 id 恢复回去：不恢复的话，同一个 worker 上后续的
+    # 后台任务会**继承上一个请求的 id**，日志里就会出现"串线的关联"。
+    trace.reset_request_id(token)
     response.headers[metrics_mod.REQUEST_ID_HEADER] = request_id
     return response
 

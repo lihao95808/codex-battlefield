@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from .config import CODEX_KINDS, ROOT_DIR, Settings, get_settings, machine_root_of
 from .database import SessionLocal
 from .events import event_bus
+from . import trace
 from .models import ConstitutionRecord, EventRecord, RunKind, RunRecord, RunStatus, STOPPED_STATUSES, TaskNode, TaskStatus, TERMINAL_STATUSES, utcnow
 from . import blockers
 from . import budget
@@ -10448,6 +10449,8 @@ class Orchestrator:
                 constitution_hash=task.constitution_hash,
                 constitution_version=task.constitution_version,
                 usage_json=dumps(getattr(envelope, "usage", None)),
+                # P5-5：发起这次运行的请求 id。调度触发的运行为 None（**不是忘了记**）。
+                request_id=trace.request_id_or_none(),
                 started_at=utcnow(),
                 finished_at=utcnow(),
             )
@@ -10501,6 +10504,8 @@ class Orchestrator:
                 workdir=task.worktree_path,
                 constitution_hash=task.constitution_hash,
                 constitution_version=task.constitution_version,
+                # 合成运行（内部父节点验收）也要能关联到触发它的请求（若有）。
+                request_id=trace.request_id_or_none(),
                 started_at=utcnow(),
                 finished_at=utcnow(),
             )
