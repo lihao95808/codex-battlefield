@@ -44,20 +44,23 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# 同目录的跨平台解析器（P6-2）：浏览器候选位置只有一份实现。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from platform_support import browser_candidates  # noqa: E402
+
 try:
     import websockets
 except ModuleNotFoundError:  # pragma: no cover - 环境问题要说清，不要伪装成"页面没问题"
-    print("缺少 websockets（CDP 要用）。用 api 的 venv 跑：api\\.venv\\Scripts\\python.exe", file=sys.stderr)
+    from platform_support import python_executable as _py  # noqa: E402
+
+    print(f"缺少 websockets（CDP 要用）。用仓库 venv 跑：{_py()}", file=sys.stderr)
     raise SystemExit(2) from None
 
 SENTINEL = "a6-probe-self-check-sentinel"
 
-BROWSER_CANDIDATES = (
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-)
+# 候选位置按**平台**给（P6-2）：Windows 要写死安装路径，Unix 侧交给 `which`。
+# 这份清单只有一处实现，见 `scripts/platform_support.py`。
+BROWSER_CANDIDATES = browser_candidates()
 
 RENDER_PROBE_JS = """
 (() => {
@@ -81,14 +84,19 @@ def find_browser(explicit: str | None) -> str:
         if not Path(explicit).exists():
             raise SystemExit(f"给定的浏览器不存在：{explicit}")
         return explicit
-    for name in ("chrome", "msedge"):
-        found = shutil.which(name)
+    for candidate in BROWSER_CANDIDATES:
+        # 绝对路径直接看文件；可执行名交给 `which`（Unix 侧的 Chrome 装在 PATH 里）。
+        if os.path.isabs(candidate):
+            if Path(candidate).exists():
+                return candidate
+            continue
+        found = shutil.which(candidate)
         if found:
             return found
-    for candidate in BROWSER_CANDIDATES:
-        if Path(candidate).exists():
-            return candidate
-    raise SystemExit("本机找不到 Chrome / Edge；用 --browser 指定可执行文件路径")
+    raise SystemExit(
+        "本机找不到 Chrome / Chromium / Edge；用 --browser 指定可执行文件路径 "
+        "（Windows 给 chrome.exe 的完整路径，Linux 给 /usr/bin/google-chrome 这类路径）"
+    )
 
 
 def free_port() -> int:

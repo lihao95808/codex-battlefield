@@ -22,6 +22,7 @@
 | [`e2e-browser.md`](e2e-browser.md) | 真浏览器 E2E：为什么不用 `page.route` 回放、`channel: 'chromium'` 那个坑、诊断导出怎么判 |
 | [`weak-model-usability.md`](weak-model-usability.md) | 弱模型可用性实测：两档便宜模型能当 planner、失败模式是"结构漂移"、没验成的档怎么如实标记 |
 | [`ci.md`](ci.md) | CI 与跨平台：为什么必须双平台、判据为什么不能断言"CI 会绿"、W9 防的是什么分叉 |
+| [`cross-platform.md`](cross-platform.md) | 跨平台：审计出的 Windows 假设与处置、`platform_support.py` 的三条取舍、**没在 Linux 上跑过**这件事怎么记 |
 | [`container.md`](container.md) | 容器化：三条取舍、**沙箱在容器内的差异**、凭据与 `git worktree` 的坑 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
