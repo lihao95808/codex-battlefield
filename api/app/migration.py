@@ -22,7 +22,7 @@
 ## 为什么不能靠 target_path 自动推断
 
 实测本机的旧库只有一条 constitution，target_path 是
-`D:\\work\\codex-battlefield\\workspace\\projects\\game-618ff8ec-run-5d75656002`
+`<repo>\\workspace\\projects\\game-618ff8ec-run-5d75656002`
 ——它在旧工作区**内部**，是一次性目标目录。把它当工程根会把状态挂到一个临时目录上。
 所以本模块把这种情况**标成不可用**并说明理由，让人显式指定。
 """

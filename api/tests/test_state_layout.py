@@ -39,7 +39,7 @@ from app.state_layout import (
 def test_state_home_round_trips_through_the_config_file(tmp_path: pathlib.Path, monkeypatch) -> None:
     """**关键判据：Windows 路径必须能原样读回来。**
 
-    第一版把路径直接塞进双引号里，`D:\\work\\x` 的 `\\w` 是非法 TOML 转义，
+    第一版把路径直接塞进双引号里，`C:\\work\\x` 的 `\\w` 是非法 TOML 转义，
     读端静默 `TOMLDecodeError -> None`，于是配置被忽略、悄悄退回默认值。
     实测现象：搬完状态根后 `state show` 仍报旧位置。
     """
@@ -224,7 +224,7 @@ def test_l3_but_machine_level_paths_still_work_when_unbound(tmp_path: pathlib.Pa
 
 
 def test_key_is_deterministic_and_safe() -> None:
-    for raw in [r"D:\work\g10", r"\\server\share\x", r"C:\a b\中文"]:
+    for raw in [r"C:\work\g10", r"\\server\share\x", r"C:\a b\中文"]:
         key = project_key(raw)
         assert key == project_key(raw)
         assert key.isascii(), f"key 不是 ASCII（会导致编码问题）：{key}"
@@ -234,13 +234,13 @@ def test_key_is_deterministic_and_safe() -> None:
 
 def test_windows_case_folding_gives_one_project() -> None:
     """Windows 大小写不敏感：同一工程不许得到两个目录。"""
-    assert project_key(r"D:\work\g10") == project_key(r"D:\WORK\G10")
+    assert project_key(r"C:\work\g10") == project_key(r"C:\WORK\G10")
 
 
 def test_distinct_paths_get_distinct_keys() -> None:
     keys = {
-        project_key(r"D:\work\g10"),
-        project_key(r"D:\work\g10\art_res"),
+        project_key(r"C:\work\g10"),
+        project_key(r"C:\work\g10\art_res"),
         project_key(r"E:\work\g10"),
         project_key(r"D:\a b\c"),
         project_key(r"D:\a-b\c"),
@@ -250,8 +250,8 @@ def test_distinct_paths_get_distinct_keys() -> None:
 
 
 def test_trailing_separator_is_ignored() -> None:
-    assert project_key(r"D:\work\g10") == project_key(r"D:\work\g10\\")
-    assert normalize_project_root(r"D:\work\g10/") == normalize_project_root(r"D:\work\g10")
+    assert project_key(r"C:\work\g10") == project_key(r"C:\work\g10\\")
+    assert normalize_project_root(r"C:\work\g10/") == normalize_project_root(r"C:\work\g10")
 
 
 # ---------- key 的长度预算（被组合路径反推，不是可读性优先） ----------
@@ -264,7 +264,7 @@ def test_key_is_short_enough_for_the_composed_path_budget() -> None:
     于是 `<状态根>/projects/<key>/runs` 直接
     `[WinError 206] 文件名或扩展名太长`，连目录都建不出来。
     """
-    deep = r"C:\Users\duzuguang\Documents\公司项目\2026年\国风UI重构\art_res\structure_backup2021\ta_tools\ps_helper\sub_agent\agent3"
+    deep = r"C:\work\projects\2026\某公司项目\界面重构\art_res\structure_backup2021\ta_tools\ps_helper\sub_agent\agent3"
     key = project_key(deep)
 
     assert len(key) <= 70, f"key 太长（{len(key)}），组合路径会撞 MAX_PATH：{key}"
@@ -272,16 +272,16 @@ def test_key_is_short_enough_for_the_composed_path_budget() -> None:
 
 def test_key_stays_readable_via_the_leaf_name() -> None:
     """可读性由**末段目录名**提供：一眼能看出是哪个工程。"""
-    deep = r"C:\Users\duzuguang\Documents\公司项目\2026年\国风UI重构\art_res\structure_backup2021\ta_tools\ps_helper\sub_agent\agent3"
+    deep = r"C:\work\projects\2026\某公司项目\界面重构\art_res\structure_backup2021\ta_tools\ps_helper\sub_agent\agent3"
     assert "agent3" in project_key(deep)
-    assert "g10" in project_key(r"D:\work\g10")
-    assert "battlefield" in project_key(r"D:\work\codex-battlefield")
+    assert "g10" in project_key(r"C:\work\g10")
+    assert "battlefield" in project_key(r"C:\work\codex-battlefield")
 
 
 def test_leaf_only_keys_still_prevent_collisions() -> None:
     """**关键**：两个都叫 `agent3` 的不同目录必须得到不同 key（靠哈希，不靠路径）。"""
-    first = project_key(r"D:\work\projA\agent3")
-    second = project_key(r"D:\work\projB\agent3")
+    first = project_key(r"C:\work\projA\agent3")
+    second = project_key(r"C:\work\projB\agent3")
 
     assert first != second, f"同名末段撞了：{first}"
     # 但两个都还能一眼看出叫 agent3
@@ -296,9 +296,9 @@ def test_key_length_is_bounded_for_absurd_paths() -> None:
 def test_pathological_leaf_falls_back_to_head_and_hash() -> None:
     """末段名本身超长时退到 `<盘符>--<哈希>`，仍然安全且够短。"""
     leaf = "x" * 200
-    key = project_key(f"D:\\work\\{leaf}")
+    key = project_key(f"C:\\work\\{leaf}")
     assert len(key) <= 70
-    assert key.startswith("d--")
+    assert key.startswith("c--")
 
 
 def test_unc_and_drive_heads_are_still_distinct() -> None:
@@ -326,12 +326,12 @@ def test_read_active_project_handles_missing_and_broken_files(tmp_path: pathlib.
 
     # 合法对象
     (home / "active.json").write_text(
-        json.dumps({"project_key": "d--work-g10--abcdef12", "project_root": r"D:\work\g10"}),
+        json.dumps({"project_key": "d--work-g10--abcdef12", "project_root": r"C:\work\g10"}),
         encoding="utf-8",
     )
     key, root = read_active_project(home)
     assert key == "d--work-g10--abcdef12"
-    assert root == pathlib.Path(r"D:\work\g10")
+    assert root == pathlib.Path(r"C:\work\g10")
 
 
 def test_load_layout_prefers_the_explicit_override(tmp_path: pathlib.Path) -> None:

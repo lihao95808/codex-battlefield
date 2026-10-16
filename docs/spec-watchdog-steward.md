@@ -38,9 +38,9 @@
 {
   "started_at": "...", "finished_at": "...", "status": "completed",
   "reason": "", "duration_seconds": 4.2, "pid": 74044, "root_id": "",
-  "api_url": "http://127.0.0.1:8765", "state_home": "D:\\work\\.codex-battlefield",
+  "api_url": "http://127.0.0.1:8765", "state_home": "C:\\work\\.codex-battlefield",
   "stale_after_seconds": 60, "interval_seconds": 60,
-  "repo_root": "D:\\work\\codex-battlefield"
+  "repo_root": "C:\\work\\codex-battlefield"
 }
 ```
 
@@ -117,7 +117,7 @@
 **不读**用户配置文件 `~/.codex-battlefield.toml`；而 Python 侧
 `resolve_state_home()` 的优先级是"环境变量 > 配置文件 > 默认"。
 
-后果（实测）：配置把状态根指到 `D:\work\.codex-battlefield`，
+后果（实测）：配置把状态根指到 `C:\work\.codex-battlefield`，
 而看门狗落到 `C:\Users\<user>\.codex-battlefield` —— 写的心跳没人看，
 观测方于是认为"看门狗没在跑"。
 
@@ -178,7 +178,7 @@
 ```powershell
 # 注册（每分钟；含登录时启动）
 powershell -File scripts\register_battlefield_watchdog_task.ps1 `
-  -StateHome "D:\work\.codex-battlefield" -IntervalMinutes 1 -WithLogonTrigger
+  -StateHome "C:\work\.codex-battlefield" -IntervalMinutes 1 -WithLogonTrigger
 
 # 查
 schtasks /Query /TN CodexBattlefieldWatchdog /V /FO LIST

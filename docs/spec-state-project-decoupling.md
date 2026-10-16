@@ -92,7 +92,7 @@ self.schema_dir = settings.workspace_dir.parent / "schemas"
 ├── tools/                                # helper 脚本（从模板生成，可共享）
 └── projects/
     └── <project-key>/                    # 每个工程一份
-        ├── project.json                  # {root: "D:\\work\\g10", created_at, ...}
+        ├── project.json                  # {root: "C:\\work\\g10", created_at, ...}
         ├── battlefield.sqlite3(+wal/shm) # 该工程自己的树
         ├── runs/                         # 该工程的运行记录
         ├── worktrees/                    # 该工程的节点工作树（须与目标仓库同盘）
@@ -107,8 +107,8 @@ self.schema_dir = settings.workspace_dir.parent / "schemas"
 
 ```
 key = lower( <首段> + "--" + <其余段 slug 化> + "--" + sha1(lower(规范化路径))[:8] )
-例：D:\work\g10        → d--work-g10--dc4eb916
-    D:\work\g10\art_res → d--work-g10-art_res--342be65c
+例：C:\work\g10        → d--work-g10--dc4eb916
+    C:\work\g10\art_res → d--work-g10-art_res--342be65c
     \\server\share\proj\x → unc--server-share-proj-x--2a563632
     D:\工作\国风UI      → d--%e5b7a5%e4bd9c-%e59bbd%e9a38eui--3e5ea68b
 ```
@@ -127,10 +127,10 @@ key = lower( <首段> + "--" + <其余段 slug 化> + "--" + sha1(lower(规范�
 >
 > | bug | 现象 | 修法 |
 > |---|---|---|
-> | 主体折叠与哈希折叠不一致 | 哈希对路径做 `lower()`，主体却保留原大小写 → `D:\work\g10` 与 `D:\WORK\G10` **主体不同、哈希相同**，同一工程得到**两个目录**（是"防碰撞"的反面） | slug 化前先做 ASCII `lower()` 折叠，**主体与哈希用同一个规范化串** |
+> | 主体折叠与哈希折叠不一致 | 哈希对路径做 `lower()`，主体却保留原大小写 → `C:\work\g10` 与 `C:\WORK\G10` **主体不同、哈希相同**，同一工程得到**两个目录**（是"防碰撞"的反面） | slug 化前先做 ASCII `lower()` 折叠，**主体与哈希用同一个规范化串** |
 > | 安全字符集漏了 `%` | 正则 `[A-Za-z0-9._-]` 拒绝了 slug 化自己产出的 `%XX`，所有含中文/空格的路径都被判"不安全" | 白名单加 `%` |
 >
-> 现在 8 个样本（含盘符、UNC、中文、空格、大小写差异）全部通过，且 `D:\work\g10` 与 `D:\WORK\G10` 正确得到同一 key。
+> 现在 8 个样本（含盘符、UNC、中文、空格、大小写差异）全部通过，且 `C:\work\g10` 与 `C:\WORK\G10` 正确得到同一 key。
 
 ### 4.2 规范化规则（决定"同一个工程"的判定）
 
@@ -309,7 +309,7 @@ database._migrate_sqlite_columns()      # 内部 `with engine.begin()` —— �
 
 ```
 battlefield-project list                 列出已挂载工程 + 各库路径 + 大小
-battlefield-project use D:\work\g10      挂载并切为当前工程（写 active.json + registry.json）
+battlefield-project use C:\work\g10      挂载并切为当前工程（写 active.json + registry.json）
 battlefield-project current              显示当前工程、状态根、库路径、是否回退 worktree
 battlefield-project migrate [--from ...] 迁移老 workspace/（见 §10）
 battlefield-project doctor               体检：状态根可写、库可打开、worktree 同盘、无 key 碰撞
@@ -459,7 +459,7 @@ DB2/DB3/DB5 由 P2 的 `test_workspace_follows_project.py` 覆盖。
 
 ### 12.3.1 三个实测踩到的坑（都留了回归测试）
 
-1. **TOML 写 Windows 路径忘了转义反斜杠。** `state_home = "D:\work\x"` 里 `\w` 不是合法
+1. **TOML 写 Windows 路径忘了转义反斜杠。** `state_home = "C:\work\x"` 里 `\w` 不是合法
    转义 → 读端 `TOMLDecodeError` → 静默退回默认状态根。表现：搬完状态根后
    `state show` 仍报旧位置。修法：`_toml_value()` 统一转义；
    并且**坏配置不再静默**——降级到默认值的同时把原因写到 stderr。

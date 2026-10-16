@@ -79,7 +79,7 @@ def test_unbound_falls_back_to_the_legacy_workspace(tmp_path: pathlib.Path, monk
 def test_bound_project_moves_workspace_and_database(tmp_path: pathlib.Path, monkeypatch) -> None:
     """绑定后：每工程状态必须落到该工程的状态目录（P2 的核心目标）。"""
     _isolate_env(monkeypatch)
-    _bind(tmp_path, r"D:\work\g10")
+    _bind(tmp_path, r"C:\work\g10")
     settings = _settings(tmp_path)
 
     assert settings.layout.bound is True
@@ -99,7 +99,7 @@ def test_bare_settings_follows_active_json(tmp_path: pathlib.Path, monkeypatch) 
     于是 Settings 用了 conftest 的隔离状态根、而绑定写在 tmp_path，测的是两回事。
     """
     _isolate_env(monkeypatch)
-    _bind(tmp_path, r"D:\work\g10")
+    _bind(tmp_path, r"C:\work\g10")
     monkeypatch.setenv("CODEX_BATTLEFIELD_STATE_HOME", str(tmp_path))
 
     bare = config_module.Settings()
@@ -114,7 +114,7 @@ def test_get_settings_and_bare_settings_agree(tmp_path: pathlib.Path, monkeypatc
     不一致正是坑 1 的表现形态，而且很难发现：端点报 A、库在 B。
     """
     _isolate_env(monkeypatch)
-    _bind(tmp_path, r"D:\work\g10")
+    _bind(tmp_path, r"C:\work\g10")
     monkeypatch.setenv("CODEX_BATTLEFIELD_STATE_HOME", str(tmp_path))
 
     from_settings = config_module.get_settings()
@@ -127,7 +127,7 @@ def test_get_settings_and_bare_settings_agree(tmp_path: pathlib.Path, monkeypatc
 def test_explicit_arguments_always_win(tmp_path: pathlib.Path, monkeypatch) -> None:
     """显式传入优先——约 150 处测试/脚本依赖这一点，不能被"跟随布局"覆盖。"""
     _isolate_env(monkeypatch)
-    _bind(tmp_path, r"D:\work\g10")
+    _bind(tmp_path, r"C:\work\g10")
     explicit_ws = tmp_path / "explicit-ws"
     explicit_db = "sqlite:///D:/explicit/x.sqlite3"
 
@@ -143,7 +143,7 @@ def test_env_database_url_wins_over_the_layout(tmp_path: pathlib.Path, monkeypat
     """
     monkeypatch.delenv("CODEX_BATTLEFIELD_PROJECT_KEY", raising=False)
     monkeypatch.setenv("CODEX_BATTLEFIELD_DATABASE_URL", "sqlite:///D:/env/wins.sqlite3")
-    _bind(tmp_path, r"D:\work\g10")
+    _bind(tmp_path, r"C:\work\g10")
 
     settings = _settings(tmp_path)
     assert settings.database_url == "sqlite:///D:/env/wins.sqlite3"
@@ -162,7 +162,7 @@ def test_pytest_suite_cannot_be_polluted_by_a_real_active_json() -> None:
     assert settings.project_root is None
 
 
-@pytest.mark.parametrize("root", [r"D:\work\g10", r"\\server\share\x"])
+@pytest.mark.parametrize("root", [r"C:\work\g10", r"\\server\share\x"])
 def test_bound_layout_is_used_for_cwd_and_runs(tmp_path: pathlib.Path, monkeypatch, root: str) -> None:
     """跟随的不只是库：`runs/`、`worktrees/` 也必须落在工程目录里。"""
     _isolate_env(monkeypatch)

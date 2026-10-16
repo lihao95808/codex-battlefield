@@ -424,7 +424,7 @@ def watchdog_hook_state(root_dir: str | Path, settings: Settings, root_id: str |
     # 原先这里没传，于是一次手动 `run-once`（或任何不带环境变量的启动）会让看门狗
     # 退回 `%USERPROFILE%\.codex-battlefield`，**与 API 实际使用的状态根不同** ——
     # 表现是看门狗写了心跳、API 在另一个目录找，于是"看门狗好像没在跑"。
-    # 实测踩到：API 用 `D:\work\.codex-battlefield`，看门狗落到
+    # 实测踩到：API 用 `C:\work\.codex-battlefield`，看门狗落到
     # `C:\Users\<user>\.codex-battlefield`。
     state_home_part = f' -StateHome "{machine_root_of(settings)}"'
     agent_burst_limit = budget.agent_burst_limit(settings)

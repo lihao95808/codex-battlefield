@@ -45,7 +45,7 @@ $WorkspaceDir = Join-Path $RepoRoot "workspace"
 # 看门狗写了心跳、API 在另一个目录找，于是"看门狗好像没在跑"。
 # Python 的顺序是 环境变量 > 用户配置文件(`~/.codex-battlefield.toml`) > 内置默认；
 # 这里**不再自己实现一遍**（自己实现就是第二份真相，实测已经漂移过一次：
-# 配置把状态根指到 D:\work\.codex-battlefield，而 ps1 落到了
+# 配置把状态根指到 C:\work\.codex-battlefield，而 ps1 落到了
 # %USERPROFILE%\.codex-battlefield）。改为：把三个候选交给解析器，
 # 解析器算完再问它"最终用的是哪个"。
 $DefaultStateHome = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex-battlefield"

@@ -114,7 +114,7 @@ def fold(text: str) -> str:
     """Windows 语义的大小写折叠。
 
     主体与哈希**必须**用同一个折叠后的串。第一版让哈希用 `lower()` 而主体保留
-    原大小写，于是 `D:\\work\\g10` 与 `D:\\WORK\\G10` 主体不同、哈希相同 ——
+    原大小写，于是 `C:\\work\\g10` 与 `C:\\WORK\\G10` 主体不同、哈希相同 ——
     同一工程得到**两个目录**，正是"防碰撞"的反面。
     """
     return text.lower()
@@ -349,7 +349,7 @@ def _toml_value(value: object) -> str:
     """把值序列化成合法 TOML。
 
     **必须转义反斜杠**：Windows 路径里全是 `\\`，直接写成
-    `state_home = "D:\\work\\x"` 是**非法 TOML**（`\\w` 不是合法转义），
+    `state_home = "C:\\work\\x"` 是**非法 TOML**（`\\w` 不是合法转义），
     而读端会静默 `TOMLDecodeError -> None`，于是配置被忽略、悄悄退回默认值。
     实测踩过：搬完状态根后 `state show` 仍报旧位置 —— 就是这个。
     """
