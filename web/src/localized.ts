@@ -40,6 +40,7 @@ export const LOCALIZED: LocalizedFile[] = [
  * —— 它的拆分属于 P5-2，那时候一起转才不会白做一遍。
  */
 export const PENDING: string[] = [
+  'MetricsPanel.tsx',
   'DeliveryPanel.tsx',
   'CoordinationPanel.tsx',
   'CostPanel.tsx',

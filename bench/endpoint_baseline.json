@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "最慢 5 个端点的 p95 基线（P5-1）。由 scripts/probe_endpoint_latency.py 实测得出，",
+    "不是凭感觉定的阈值。判据在 api/tests/test_metrics_baseline.py；运行时超过基线",
+    "1.5 倍会被 /api/metrics 报成 regressions。",
+    "刷新方式：起 API → 跑探针 → 把输出喂给 POST /api/metrics/baseline。",
+    "不要为了让测试变绿而调大这里的数字 —— 那是把判据改成'永远通过'。"
+  ],
+  "measured_at": "2026-10-16",
+  "how": "api/.venv/Scripts/python.exe scripts/probe_endpoint_latency.py http://127.0.0.1:8766（预热 2 次 + 15 次取 p95，本机 Windows）",
+  "notes": [
+    "全部端点都在 130ms 以内 —— 也就是说没有需要立刻优化的慢端点。",
+    "本次交付的价值因此在于'以后不会再悄悄慢下去'，而不是'修好了一个慢端点'。",
+    "/api/events 是 SSE，urlopen 会等到超时（量出来是 inf），已从探针里排除。",
+    "这些是空树/小库下的数字。大数据量下的绝对耗时由 api/tests/test_scale.py 单独钉。"
+  ],
+  "budgets_ms": {
+    "GET /api/tree": 83.0,
+    "GET /api/auto-policy": 74.0,
+    "GET /api/watchdog/state": 62.9,
+    "GET /api/state/overview": 45.9,
+    "GET /api/overview/cross-project": 42.2
+  },
+  "tolerance": 1.5
+}

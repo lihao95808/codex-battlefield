@@ -25,6 +25,7 @@ from . import (
     cost as cost_mod,
     cross_project,
     delivery as delivery_mod,
+    metrics as metrics_mod,
     watchdog_tuning as watchdog_tuning_mod,
     diagnostics as diagnostics_mod,
     project_store,
@@ -163,13 +164,121 @@ async def _steward_proactive_loop() -> None:
 
 app = FastAPI(title="Codex 任务战场 API", version="0.1.0", lifespan=lifespan)
 
+# 加载慢端点基线（P5-1）：文件在 `bench/endpoint_baseline.json`。
+# 加载失败只是"不做退化判断"，不该让 API 起不来 —— 判据里另有一条查它真的被加载了。
+metrics_mod.load_baseline(metrics_mod.baseline_file())
+# 记下启动快照：测试要能"清样本但保留文件基线"（见 `metrics._reset_for_tests` 的注释）。
+metrics_mod._remember_startup_baseline()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # 关联 ID 要让前端读得到（`fetch` 默认拿不到非简单响应头）。
+    expose_headers=[metrics_mod.REQUEST_ID_HEADER],
 )
+
+
+@app.middleware("http")
+async def _measure_requests(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """给每个请求计时、发关联 ID（P5-1 / P5-5）。
+
+    三件事：
+
+    1. **计时并录进指标**。按**路由模板**分组（`/api/tasks/{task_id}`），不是真实路径 ——
+       否则每个 task_id 各占一行，指标表在最需要看清"哪个端点慢"的时候变成几千行噪声。
+    2. **发一个关联 ID 并回写响应头**。客户端日志、界面报错、服务端日志三者靠它串起来；
+       用户截图里的那个 ID 必须能在服务端日志里搜到。
+    3. **失败也录**。500 花掉的时间一样是真实负载 —— 把它们排除出去，
+       指标会在系统最不稳定的时候看起来最漂亮。
+
+    ⚠️ 中间件里**不能**抛异常：一个指标 bug 让整个 API 挂掉是不可接受的。
+    所以计时与录指标都包在 try/except 里，而 `call_next` 的异常照常往上抛
+    （那是业务错误，必须让 FastAPI 自己的错误处理接管）。
+    """
+    inbound = request.headers.get(metrics_mod.REQUEST_ID_HEADER, "").strip()
+    request_id = inbound or metrics_mod.new_request_id()
+    # 路由模板要等 `call_next` 之后才在 `request.scope` 里（路由匹配那一刻才填）。
+    recorder = metrics_mod.Recorder("pending")
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+    except Exception:
+        # 业务异常：**记一次失败再往上抛** —— 否则"崩掉的请求"在指标里不存在，
+        # 而它们恰恰是最该被看见的那批。
+        try:
+            _finish_request(
+                recorder,
+                request,
+                metrics_mod.route_key(request.method, request.url.path, None),
+                500,
+                request_id,
+            )
+        except Exception:  # noqa: BLE001 - 指标绝不能盖住业务异常
+            pass
+        raise
+    try:
+        route = request.scope.get("route")
+        template = getattr(route, "path", None) if route is not None else None
+        _finish_request(
+            recorder,
+            request,
+            metrics_mod.route_key(request.method, request.url.path, template),
+            status,
+            request_id,
+        )
+    except Exception:  # noqa: BLE001 - 指标失败不影响响应
+        pass
+    response.headers[metrics_mod.REQUEST_ID_HEADER] = request_id
+    return response
+
+
+def _finish_request(
+    recorder: "metrics_mod.Recorder",
+    request: Request,
+    key: str,
+    status: int,
+    request_id: str,
+) -> None:
+    recorder.key = key
+    duration = recorder.finish(metrics_mod.metrics, status)
+    log_structured_request(request, key=key, status=status, duration_ms=duration, request_id=request_id)
+
+
+def log_structured_request(
+    request: Request,
+    *,
+    key: str,
+    status: int,
+    duration_ms: float,
+    request_id: str = "",
+) -> None:
+    """结构化请求日志（P5-5）。
+
+    **用 JSON 一行一条**，不是给人读的散文：可观测性的价值在于能被机器筛。
+    只记 `api.*` 路径 —— 静态前端产物每个请求都记会把日志淹掉。
+
+    ⚠️ `request_id` 必须由调用方**传实际发出去的那个**，不能在这里回读请求头。
+    第一版就是回读的，于是"我们自己生成 ID"的那条路径记下来的是空串 ——
+    而**响应头里有 ID、日志里搜不到它**，正好把关联 ID 的唯一用途废掉。
+    实测由 `test_n4_api_requests_are_logged_as_json_lines` 抓到。
+    """
+    path = request.url.path
+    if not path.startswith("/api"):
+        return
+    record = {
+        "event": "http.request",
+        "method": request.method,
+        "route": key.split(" ", 1)[-1],
+        "path": path,
+        "status": status,
+        "duration_ms": round(duration_ms, 3),
+        "request_id": request_id,
+    }
+    print(json.dumps(record, ensure_ascii=False), file=sys.stderr)
 
 
 IMAGE_PREVIEW_EXTENSIONS = {
@@ -1055,6 +1164,76 @@ def delivery_record(payload: dict, db: Session = Depends(get_db)) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return delivery_mod.payload(row)
+
+
+@app.get("/api/metrics")
+def get_metrics(limit: int = Query(default=0, ge=0, le=200)) -> dict:
+    """每个端点的**最近窗口**耗时（P5-1 / P5-5）。
+
+    `limit>0` 时只给最慢的几个 —— 那是排查时真正要看的。
+
+    ⚠️ 分位数是**滑动窗口**的（每个路由最多 1000 个样本），不是全历史。
+    当全历史读会在长跑之后得出完全错误的结论，所以响应里也写了这一句。
+    """
+    payload = metrics_mod.metrics.payload(limit=limit)
+    payload["regressions"] = metrics_mod.regression(
+        metrics_mod.metrics.snapshot(), metrics_mod.metrics.baseline
+    )
+    payload["uptime_seconds"] = round(time.perf_counter() - metrics_mod.metrics.started_at, 1)
+    return payload
+
+
+@app.post("/api/metrics/baseline")
+def set_metrics_baseline(payload: dict) -> dict:
+    """写入/更新某个端点的 **p95 基线**（P5-1）。
+
+    基线的用途是"不再退化"：比基线慢 1.5 倍以上会被 `/api/metrics` 报成
+    `regressions`。**没有基线时不做判断** —— 拿一个假想的阈值去卡，只会制造假警报。
+
+    `p95_ms` 省略时取当前值（"把现状定成基线"），这样刷新基线不需要手抄数字。
+    """
+    key = str(payload.get("key") or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="基线必须指明路由键（key）。")
+    raw = payload.get("p95_ms")
+    if raw is None:
+        current = metrics_mod.metrics.route(key)
+        if current is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"没有 {key} 的样本，也就无法把现状定成基线。请先给它发几个请求。",
+            )
+        value = metrics_mod.percentiles(current)["p95_ms"]
+    else:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"p95_ms 必须是数字，收到 {raw!r}。") from exc
+    if value is None or value <= 0:
+        raise HTTPException(status_code=400, detail="p95_ms 必须是正数（0 或空值没有比较意义）。")
+
+    metrics_mod.metrics.baseline[key] = round(value, 3)
+    return {
+        "status": "recorded",
+        "key": key,
+        "p95_ms": metrics_mod.metrics.baseline[key],
+        "message": f"已记下 {key} 的 p95 基线：{metrics_mod.metrics.baseline[key]} ms。",
+    }
+
+
+@app.delete("/api/metrics")
+def reset_metrics() -> dict:
+    """清空样本（**不动基线**）。
+
+    清样本是"重新开始量"，忘掉标准是另一件事 —— 混在一起会让一次误点把两周的
+    基线一起抹掉。
+    """
+    metrics_mod.metrics.reset()
+    return {
+        "status": "reset",
+        "message": "样本已清空；基线保留。",
+        "baseline": dict(sorted(metrics_mod.metrics.baseline.items())),
+    }
 
 
 @app.get("/api/attention")

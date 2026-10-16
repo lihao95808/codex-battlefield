@@ -881,6 +881,41 @@ export interface DeliveryResponse {
   summary?: string;
 }
 
+/** 请求指标（`GET /api/metrics`，P5-1 / P5-5）。 */
+export interface RouteMetrics {
+  key: string;
+  count: number;
+  errors: number;
+  error_rate: number | null;
+  last_status: number;
+  samples: number;
+  total_ms: number;
+  mean_ms: number | null;
+  max_ms: number | null;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+}
+
+export interface MetricsRegression {
+  key: string;
+  baseline_p95_ms: number;
+  current_p95_ms: number;
+  ratio: number;
+  samples: number;
+}
+
+export interface MetricsResponse {
+  routes: RouteMetrics[];
+  route_count: number;
+  sample_limit: number;
+  quantiles: number[];
+  baseline: Record<string, number>;
+  regressions: MetricsRegression[];
+  uptime_seconds: number;
+  note: string;
+}
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */

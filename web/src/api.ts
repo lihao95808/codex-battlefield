@@ -9,6 +9,7 @@ import type {
   CostReport,
   CrossProjectResponse,
   DeliveryResponse,
+  MetricsResponse,
   ObligationIndexBoard,
   PreAuthorizationResponse,
   RunArtifactResponse,
@@ -272,6 +273,33 @@ export async function saveConclusion(input: {
 /** 导出链接（直接给 `<a href>` 用；返回的是 Markdown 附件）。 */
 export function conclusionExportUrl(conclusionId: number): string {
   return `/api/conclusions/${conclusionId}/export`;
+}
+
+/**
+ * 每个端点的耗时（P5-1 / P5-5）。
+ *
+ * `limit > 0` 时只给最慢的几个 —— 那是排查时真正要看的。
+ * 分位数是**最近窗口**的，不是全历史（响应里的 `note` 也写了）。
+ */
+export async function fetchMetrics(limit = 10): Promise<MetricsResponse> {
+  const response = await fetch(`/api/metrics?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error('指标读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/** 把当前值定成某个端点的 p95 基线（P5-1）。 */
+export async function setMetricsBaseline(key: string, p95Ms?: number): Promise<{ message: string }> {
+  const response = await fetch('/api/metrics/baseline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p95Ms === undefined ? { key } : { key, p95_ms: p95Ms }),
+  });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '写入基线失败'));
+  }
+  return response.json();
 }
 
 /**

@@ -62,6 +62,7 @@ import { PreAuthPanel } from './PreAuthPanel';
 import { ConclusionPanel } from './ConclusionPanel';
 import { CoordinationPanel } from './CoordinationPanel';
 import { DeliveryPanel } from './DeliveryPanel';
+import { MetricsPanel } from './MetricsPanel';
 import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
@@ -1380,6 +1381,8 @@ export function App() {
         <ConclusionPanel />
 
         <DeliveryPanel />
+
+        <MetricsPanel />
 
         <CoordinationPanel />
 
