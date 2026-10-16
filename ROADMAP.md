@@ -140,7 +140,7 @@ P6 兼容      ── 跨平台 / 跨模型 / 容器    （解锁"谁都能部�
 
 | # | 交付物 | 判据 |
 |---|---|---|
-| P6-1 | **容器化**：`Dockerfile` + `compose`（API + Web + 可选代理） | `docker compose up` 后界面可用；卷挂载状态根；文档写清沙箱在容器内的差异 |
+| P6-1 | **容器化**：`Dockerfile` + `compose`（API + Web + 可选代理） | `docker compose up` 后界面可用；卷挂载状态根；文档写清沙箱在容器内的差异。**部分落地**：`Dockerfile`（两段构建：node 段 `pnpm build` → python 段装 api + 拷 `web/dist`）、`docker-compose.yml`（单服务、`127.0.0.1:8765` 回环绑定、命名卷 `battlefield-state:/state`）、`.dockerignore`、`docs/container.md`、21 例判据（端口/非 root/卷与 env 一致/两段构建产物落点/镜像版本对齐 `requires-python` 与 CI node/healthcheck/每个 `COPY` 源存在）。**未验证**：本机没有 Docker，`docker compose up` **一次都没跑过** —— "界面可用"这句没有证据；`docs/container.md` 如实记了这条 |
 | P6-3 | CI：GitHub Actions 跑 `verify_all`（Windows + Linux 双平台） | PR 上可见；挡住"只有本机能过"的提交。**已落地**：`.github/workflows/verify.yml`（ubuntu + windows，`fail-fast: false`，跑同一套 `verify_all.py`，显式 `RUNNER=mock`，失败收集诊断）+ 15 例判据（含**工作流与 `verify_all` 步骤逐字同步**这条防分叉的检查）。**未验证**：本机没有 Linux，也没有触发 Actions 的手段 —— "CI 会绿"这句没有证据 |
 | P6-2 | Linux/macOS 支持：脚本与路径判断去 Windows 假设 | 仓库脚本在 Linux 跑通核心路径；`verify_all` 在 Linux CI 绿。**未做**：本机无 WSL/Linux，只能靠 P6-3 的 CI 来发现要改哪里 —— 本次只交付了"能发现问题的机制" |
 | P6-4 | 弱模型/异构模型可用性：小模型跑 worker 的成功率与降级策略 | 给出"哪些档位能用便宜模型"的**实测**结论，含失败模式 |

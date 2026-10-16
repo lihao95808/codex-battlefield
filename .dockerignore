@@ -1,0 +1,47 @@
+# 镜像上下文里**不要**的东西（P6-1）。
+#
+# 镜像该只包含"跑起来需要的东西"。把这些排除掉有两个好处：
+# 上下文更小（构建更快），以及**不会把开发机的产物带进镜像**
+# ——后者更危险：`api/.venv` 里是宿主机路径的软链接，拷进容器会让
+# `pip install -e` 装出一份指向不存在路径的包，而报错在很远的地方。
+
+# 版本控制与编辑器
+.git
+.gitignore
+.github
+
+# Python 环境与缓存（**必须排除**：见上面关于 .venv 的说明）
+.venv
+api/.venv
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+
+# 前端依赖与产物（产物在镜像里**重新构建**，不搬宿主机的）
+web/node_modules
+web/dist
+web/.vite
+
+# 运行期状态（状态根在卷里，不属于镜像）
+workspace
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# 基准报告与运行产物
+bench/reports
+bench/runs
+
+# 文档与设计稿：跑起来不需要它们。留着会让镜像大一圈，
+# 而"镜像大一点"这件事在没人量之前不会被注意到。
+docs
+*.md
+!api/README.md
+
+# 库外的临时件
+node_modules
+.agents

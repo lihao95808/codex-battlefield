@@ -1,0 +1,53 @@
+# 容器编排（P6-1）
+#
+# 一个服务就够：API **自己托管前端产物**（P1-3），所以不需要单独的 Web 容器，
+# 也不需要反向代理。少一个容器 = 少一处会坏的地方。
+#
+#   docker compose up --build
+#   → http://127.0.0.1:8765
+#
+# 判据在 `api/tests/test_container.py`：核对结构与取舍（端口只绑本机、
+# 状态根走命名卷、健康检查、非 root），核不了"起来能用"——
+# 那要在有 Docker 的机器上跑。
+
+services:
+  battlefield:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codex-battlefield:local
+    # **只绑 127.0.0.1**：这个 API 没有鉴权，绑到 0.0.0.0 就等于把它
+    # 放到局域网上给所有人用。要给别人用就自己加鉴权或反向代理，
+    # 而不是把这一行改掉 —— 改这一行看起来只是"让外网也能访问"。
+    ports:
+      - '127.0.0.1:8765:8765'
+    volumes:
+      # 状态根（库、运行记录、工作树、快照）走**命名卷**：
+      # 重建镜像/重跑 compose 都不会丢任务树。
+      # 换成 bind mount 也可以（`./state:/state`），只是要在宿主机上先建好目录。
+      - battlefield-state:/state
+      # 工程目录**必须挂进来**，否则容器里没有可改的东西 ——
+      # 左边是宿主机路径，按需改（这里给的是占位示例）。
+      # - /path/to/your/project:/work/project
+    environment:
+      # 容器里没有 Codex CLI：默认 mock，让界面先能用。
+      # 要在容器里跑真实 agent，就把它改成 real，并把 CLI 与凭据一起准备进来。
+      CODEX_BATTLEFIELD_RUNNER: mock
+      # 容器内存有限，机器安全守卫的默认阈值（4096MB）会误触发休眠。
+      CODEX_BATTLEFIELD_MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB: '0'
+    restart: unless-stopped
+    # 与 Dockerfile 的 HEALTHCHECK 配合：编排放它判"到底起来了没有"。
+    # `docker compose ps` 会显示 healthy/unhealthy。
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=4).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  battlefield-state:

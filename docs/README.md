@@ -20,6 +20,7 @@
 | [`crash-injection.md`](crash-injection.md) | 崩溃注入：还原锚点为什么必须原子写、`.backup` 怎么救回第一次写、源级判据要断完整调用 |
 | [`frontend-split.md`](frontend-split.md) | 前端拆分与按需轮询：为什么不停在"看不见也拉"、文件体量棘轮怎么用、批量改写的三个坑 |
 | [`ci.md`](ci.md) | CI 与跨平台：为什么必须双平台、判据为什么不能断言"CI 会绿"、W9 防的是什么分叉 |
+| [`container.md`](container.md) | 容器化：三条取舍、**沙箱在容器内的差异**、凭据与 `git worktree` 的坑 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
 | [`bilingual-ui.md`](bilingual-ui.md) | 界面双语与术语表：覆盖范围怎么声明、8 条不变量是什么、加语言/加文案的操作顺序 |
