@@ -36,21 +36,20 @@ const LINE_LIMIT = 500;
 /**
  * 超标文件的**当前预算**（行数上限）。**只许往下调。**
  *
- * | 文件 | 预算 | 为什么还没达标 |
- * |---|---|---|
- * | `useBattlefieldController.ts` | 783 | 它是 `App()` 搬出来的状态与回调；派生值/子 hook 还可以再拆 |
+ * **现在这张表是空的**：P5-2 的目标达成 —— 全仓没有一个 `.ts/.tsx`（非测试）超过 500 行。
+ * 第四轮把最后两个大块也拆了：
  *
- * 第三轮把 `types.ts`（948 → 聚合出口 8 行，类型分到 `types-task/steward/state/insight`）、
- * `api.ts`（833 → 聚合出口 10 行，函数分到 `api-http/steward/insight/state/tree`）、
- * `StewardPanel.tsx`（565 → 468，动作收件箱进 `StewardActionInbox.tsx`）都拆掉了，
- * 所以这三条**从预算表里删掉**（棘轮第 4 条）。做到这里，全仓只剩一个文件超标。
+ * * `useBattlefieldController.ts` 783 → 488：派生值/副作用进 `useBattlefieldDerived`（364）
+ *   与 `useTreeRefresh`（62）；
+ * * 第一轮起就在表里的 `types.ts` / `api.ts` / `StewardPanel.tsx` 早在第三轮删掉。
+ *
+ * 棘轮第 4 条（"达标的条目必须删掉"）现在执行到了空表；T1/T2 仍然守着
+ * "新文件不许超标"——空表不等于判据失效。
  */
-const BUDGETS: Record<string, number> = {
-  'useBattlefieldController.ts': 783,
-};
+const BUDGETS: Record<string, number> = {};
 
 /** 预算总量（= 逐项之和）。**每拆一块就把它调下来**，只降不升。 */
-const BUDGET_TOTAL = 783;
+const BUDGET_TOTAL = 0;
 
 function sourceFiles(): string[] {
   return readdirSync(SRC)
@@ -134,8 +133,12 @@ describe('T4 判据本身可信', () => {
     expect(names.length).toBeGreaterThan(15);
   });
 
-  it('确实还有超标文件（否则棘轮表是空的，判据也就没在测东西）', () => {
-    expect(Object.keys(oversized()).length).toBeGreaterThan(0);
+  it('确实还有超标文件时，它们都在预算表里', () => {
+    // 这一条以前写的是"必须还有超标文件"（防止棘轮表空转）。**现在改成条件式**：
+    // P5-2 的目标已经达成（全仓没有一个文件超 500 行），继续要求"必须有超标文件"
+    // 会把达标判成失败。改成"如果有，就必须登记"，只要 T1 还在，"漏登记"照样红。
+    const names = Object.keys(oversized());
+    expect(names.filter((name) => !(name in BUDGETS))).toEqual([]);
   });
 
   it('行数计数与末尾换行无关（差 1 的坑）', () => {
