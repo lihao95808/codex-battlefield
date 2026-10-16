@@ -66,6 +66,12 @@ def heartbeat_home(tmp_path, monkeypatch):
         f"机器级状态落点指向了仓库（{root}）—— 测试会脏化 checkout"
     )
     root.mkdir(parents=True, exist_ok=True)
+    # **清掉可能残留的心跳文件**：未绑定工程时机器级落点与 `workspace_dir` 是同一个目录，
+    # 而那个目录在同一个 worker 里是**跨用例共享**的。别的用例写过心跳之后，
+    # 这里就会拿到 `available=True`，于是 W2（"没有心跳不谎报停摆"）偶发失败 ——
+    # 实测到的形态是 `assert True is False`，而且只在部分运行里出现。
+    # 这一条不是在跟代码较劲，是把前置条件**做实**：没有心跳就该从"确实没有"开始。
+    (root / "watchdog_status.json").unlink(missing_ok=True)
     return root
 
 
