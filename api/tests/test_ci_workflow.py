@@ -34,6 +34,7 @@ W12 来自 Linux 侧**什么都没留下**的那三次失败：runner lost commu
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import pathlib
 import re
@@ -64,10 +65,14 @@ def verify_steps() -> list[str]:
     "我不跑的东西" —— 那是噪声，不是同步。
 
     实现：逐行扫，遇到 `if args.real_...` 就记下缩进，跳过更深缩进的步骤登记。
+
+    ⚠️ 抽出步骤名时用 **DOTALL** 匹配（不是在单行上 `re.match`）：`provider 矩阵配置检查`
+    那一步的调用是**多行**写的（`run_step(` 换行后才是名字），逐行 `re.match` 会**漏掉它**
+    —— 也就是说 W9 过去一直在静默地少看一步。这是拆组判据 W13 逼出来的：并集对不上才发现。
     """
     source = VERIFY_ALL.read_text(encoding="utf-8")
-    names: list[str] = []
     in_optional = False
+    kept: list[str] = []
     for line in source.split("\n"):
         stripped = line.strip()
         if stripped.startswith("if args.real"):
@@ -78,10 +83,8 @@ def verify_steps() -> list[str]:
             in_optional = False
         if in_optional:
             continue
-        match = re.match(r'\s*run_(?:step|check)\(\s*"([^"]+)"', line)
-        if match:
-            names.append(match.group(1))
-    return names
+        kept.append(line)
+    return re.findall(r'run_(?:step|check)\(\s*"([^"]+)"', "\n".join(kept), re.DOTALL)
 
 
 def _all_runs(workflow: dict) -> list[str]:
@@ -103,10 +106,20 @@ def _all_uses(workflow: dict) -> list[str]:
 
 
 def _matrix_os(workflow: dict) -> list[str]:
+    """工作流覆盖的操作系统（**去重**保序）。
+
+    去重是必要的：门禁拆成两个作业（`--group python` / `--group web`）之后，两个作业
+    各有自己的 os 矩阵 —— 直接拼接会得到 4 条，而 W2 想说的是"覆盖两个平台"，
+    不是"矩阵条目有 4 个"。每个作业自己是否覆盖两个平台，由 W13 单独盯。
+    """
+
     values: list[str] = []
     for job in (workflow.get("jobs") or {}).values():
         matrix = (job.get("strategy") or {}).get("matrix") or {}
-        values.extend(str(item) for item in (matrix.get("os") or []))
+        for item in matrix.get("os") or []:
+            text = str(item)
+            if text not in values:
+                values.append(text)
     return values
 
 
@@ -369,6 +382,58 @@ def test_w12_the_job_has_a_timeout_so_a_death_is_diagnosable(workflow: dict) -> 
             f"{name} 没设 timeout-minutes —— runner 被榨干时会无声死掉（没有结论、没有日志）"
         )
         assert limit <= 60, f"{name} 的 timeout-minutes={limit} 太长，超时就不再有诊断价值"
+
+
+# ---------- W13 拆组不等于放宽：并集必须等于全部步骤 ----------
+
+
+def _verify_all_module():
+    spec = importlib.util.spec_from_file_location("verify_all_under_test", VERIFY_ALL)
+    assert spec and spec.loader, "verify_all 加载不了"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_w13_the_two_groups_cover_every_step(verify_steps: list[str]) -> None:
+    """`--group python` 与 `--group web` 的**并集**必须等于全部无条件步骤。
+
+    这是"拆组"这件事的**唯一**安全前提：Linux 侧 45 分钟跑不完（`docs/ci.md` §10），
+    于是把同一套门禁拆到两个并行作业里跑。拆组一旦漏掉一步，CI 就会**静默变弱** ——
+    两边都绿，而没有任何一个作业跑过那一步。所以这里从源码抽步骤名核对并集，
+    并且要求两个组**不重叠**（重叠意味着同一件事跑两遍，白花时间）。
+    """
+
+    module = _verify_all_module()
+    groups = module.STEP_GROUPS
+    assert set(groups) == {"python", "web"}, f"分组名变了：{sorted(groups)}"
+    python_steps = set(groups["python"])
+    web_steps = set(groups["web"])
+
+    assert python_steps & web_steps == set(), f"两组重叠：{sorted(python_steps & web_steps)}"
+    # `verify_steps` 是"无条件步骤名"的单一真源（见文件顶部那个 fixture）。
+    assert python_steps | web_steps == set(verify_steps), (
+        "两组并集与 verify_all 的实际步骤对不上："
+        f"缺={sorted(set(verify_steps) - (python_steps | web_steps))} "
+        f"多={sorted((python_steps | web_steps) - set(verify_steps))}"
+    )
+
+
+def test_w13_the_workflow_runs_both_groups(workflow: dict) -> None:
+    """两个作业必须分别跑 `--group python` 与 `--group web`，且各自覆盖两个平台。"""
+
+    runs = " \n".join(_all_runs(workflow))
+    assert "--group python" in runs, "没有作业跑 --group python"
+    assert "--group web" in runs, "没有作业跑 --group web"
+
+    # 每个跑门禁的作业都要有自己的 os 矩阵（两个平台）—— 否则"某个组只在 Linux 跑过"。
+    for name, job in (workflow.get("jobs") or {}).items():
+        run_text = " ".join(str(step.get("run", "")) for step in job.get("steps") or [])
+        if "verify_all.py" not in run_text:
+            continue
+        oses = ((job.get("strategy") or {}).get("matrix") or {}).get("os") or []
+        assert any("windows" in str(item) for item in oses), f"{name} 没在 Windows 上跑"
+        assert any("ubuntu" in str(item) for item in oses), f"{name} 没在 Linux 上跑"
 
 
 # ---------- 我**不能**验证的事（如实写下来） ----------

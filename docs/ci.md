@@ -260,28 +260,37 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
 
 ## 10. 已知限制（如实写下）
 
-* **Linux 侧的阻塞点是"跑不完"，不是"跑错"**（本轮查清）：`run 38965425892` 的 ubuntu 作业
-  加了 `timeout-minutes: 30` 之后，check-run 注解第一次给出了明确原因 ——
+* **Linux 侧的阻塞点是"跑不完"，不是"跑错"**（本轮查清 + 结构性处置）：`run 38965425892` 的
+  ubuntu 作业加了 `timeout-minutes: 30` 之后，check-run 注解第一次给出了明确原因 ——
   `[failure] The job has exceeded the maximum execution time of 30m0s`（作业 20:58:01 开始，
   21:33:01 以 `cancelled` 收尾，`跑 verify_all` 一直 `in_progress`）。
-  也就是说：**`verify_all` 在这台 2 vCPU 的私有仓 runner 上 30 分钟跑不完**（Windows 侧同一套
-  只要 15–18 分钟，其中 pytest 7.6–9 分钟；本机 pytest 1.8 分钟）。
-  之前几次"runner lost communication"是同一条根因的另一种表现（跑太久被杀）。
-  加超时的价值就在这里：把"无声消失"变成**一条能引用的话**。
+  把预算提到 **45 分钟**再跑（`run 38973770051` / commit `8d48868`）：
 
-  **处置（第一轮）**：把作业预算设成 **45 分钟**（30 已实测不够 + 50% 余量；Windows 侧 18 分钟远低于它）。
-  这不是"把失败推后"——它把一次**未知**（30 分钟不够、不知道要多久）变成一次**可判定**；
-  结果在 `run 38973770051`（commit `8d48868`）出来了：
+  | 平台 | 结果 | 耗时 |
+  |---|---|---|
+  | windows-latest | **success** | 16.4 分钟（22:12:03 → 22:28:29） |
+  | ubuntu-latest | 仍在 `跑 verify_all` 里 | **>44.9 分钟**（22:13:29 起，45 分钟预算到点） |
 
-  | 平台 | 结果 | 耗时 | 说明 |
-  |---|---|---|---|
-  | windows-latest | **success** | 16.4 分钟（22:12:03 → 22:28:29） | 连续第三次全绿，且这次带着"更快的 godot 用例" |
-  | ubuntu-latest | 仍在 `跑 verify_all` 里 | **>44.9 分钟**（22:13:29 起，45 分钟预算到点） | 45 分钟**也不够** |
+  **结论**：Linux 要的不是更大的超时，而是**结构性减负**。同一套 `verify_all`，
+  Windows 16.4 分钟而 Linux 45 分钟仍跑不完（≥2.8 倍），不是"再给 10 分钟"能补的。
 
-  **结论（这是这一轮最有用的数字）**：Linux 侧需要的不是更大的超时，而是**结构性减负**
-  （把用例分片到并行作业，或按步骤拆作业）—— 同一套 `verify_all`，Windows 16.4 分钟而
-  Linux 45 分钟仍跑不完，差 2.8 倍以上，不是"再给 10 分钟"能补的。
-  分片**不是放宽**：所有分片合起来仍是同一套用例（W9 仍盯步骤名逐字同步）。
+  **处置（结构性）**：`verify_all.py` 新增 `--group {all,python,web}`，把同一套门禁拆成
+  两个**并行作业**（`verify-python` / `verify-web`，各自带 45 分钟上限与双平台矩阵）。
+  两个作业各自只装自己需要的东西：Python 侧不要 node/pnpm/浏览器，前端侧要（E2E 会自己起
+  隔离端口/隔离库的 uvicorn，所以仍需 `api/.venv`）。
+
+  ⚠️ **拆组不是放宽**，这一条有两个判据钉着（W13）：
+
+  | 判据 | 盯什么 |
+  |---|---|
+  | `test_w13_the_two_groups_cover_every_step` | 两组的**并集必须等于全部无条件步骤**、且两组**不重叠**（漏一步 = CI 静默变弱：两边都绿而没有作业跑过它） |
+  | `test_w13_the_workflow_runs_both_groups` | 两个作业分别真的跑了 `--group python` 与 `--group web`，且各自覆盖 Windows + Linux |
+
+  **顺带修掉一个静默变弱**：抽步骤名的那段代码原来是在**单行**上 `re.match`，
+  而 `provider 矩阵配置检查` 那一步是**多行**调用 —— 于是 W9 一直**少看一步**。
+  是 W13 的并集核对把它逼出来的（改用 DOTALL 后 W9 才第一次真正看全 10 步）。
+  这条值得单独记：**判据的覆盖率本身也会静默缩水**，而唯一能被发现的方式是让另一个判据
+  去交叉核对它（"并集等于全集"就是这种交叉核对）。
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
   E2E 步 1 failed / 6 passed）—— 2 vCPU 的 runner 上首屏走不完 180 秒。判据因此在 `process.env.CI`

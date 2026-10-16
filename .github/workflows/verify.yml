@@ -9,6 +9,18 @@ name: verify
 #
 # 矩阵刻意**只有两个平台**：更多平台（macOS）带来的边际信息很低，
 # 而每个平台都是一份真实的等待时间。
+#
+# ## 为什么拆成两个作业（2026-10-17）
+#
+# Linux 侧 30 分钟跑不完，把预算提到 **45 分钟**再跑（run 38973770051）——
+# Windows 侧 **16.4 分钟 success**，ubuntu 侧 **>44.9 分钟仍没跑完**。
+# 也就是说需要的是**结构性减负**而不是更大的超时：把同一套 `verify_all.py`
+# 按 `--group python` / `--group web` 拆到两个并行作业里，各自落进预算。
+#
+# ⚠️ 拆组**不是放宽**：两组的并集必须等于全部无条件步骤 ——
+# `api/tests/test_ci_workflow.py::test_w13_the_two_groups_cover_every_step` 从源码里
+# 抽步骤名核对并集，少一步就红；`test_w13_the_workflow_runs_both_groups` 盯着
+# 两个作业分别真的跑了 `--group python` 与 `--group web`。
 on:
   push:
     branches: [main, hub]
@@ -21,19 +33,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify (${{ matrix.os }})
+  # Python 侧那一组：文档排版 / 语法 / PowerShell 编码 / ruff / pytest / provider 矩阵。
+  # 它不需要 node、pnpm、浏览器 —— 所以这个作业刻意只装 Python 依赖（更快）。
+  verify-python:
+    name: verify-python (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # `timeout-minutes` **不是为了省时间，是为了让失败可诊断**：
-    # ubuntu 侧曾经几次在「跑 verify_all」里跑到没有结论、日志 404 ——
-    # 加上限之后 check-run 注解第一次给出了一句能追的话：
-    # `The job has exceeded the maximum execution time of 30m0s`（作业 20:58:01 开始，
-    # 30 分钟没跑完，`跑 verify_all` 全程 in_progress）。
-    # 也就是说 **Linux 侧的问题是"跑不完"，不是"跑错"**：同一套门禁 Windows 侧 15–18 分钟
-    # （其中 pytest 7.6–9 分钟），而这台 2 vCPU 的私有仓 runner 上 30 分钟不够。
-    # 所以现在把预算设成 **45 分钟**（Windows 侧的 18 分钟远低于它，两个平台共用矩阵值）。
-    # 45 不是"把失败推后"的随意数字：30 已实测不够，再加 50% 余量；
-    # 判据 `api/tests/test_ci_workflow.py::test_w12_...` 会钉住"必须设且不超过 60"。
+    # ubuntu 侧曾经跑到没有结论、日志 404；加上限之后 check-run 注解第一次给出
+    # `The job has exceeded the maximum execution time of 30m0s`。
+    # 45 的依据：30 已实测不够（+50% 余量），Windows 侧 16.4 分钟远低于它。
     timeout-minutes: 45
     strategy:
       # 一个平台失败时**不取消另一个**：两边的失败原因常常不同，
@@ -50,6 +58,74 @@ jobs:
         with:
           python-version: '3.12'
 
+      # `.venv` 放在 `api/` 下是仓库约定（看门狗与 goal 模式按它找解释器）。
+      - name: 建 venv 并装后端依赖
+        shell: bash
+        run: |
+          python -m venv api/.venv
+          if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install -e "api[dev]"
+
+      # 门禁本身（`--group python`）。这些步骤名是从 `scripts/verify_all.py` 里**逐字**抄的，
+      # 不是概述：`api/tests/test_ci_workflow.py` 的 W9 会核对它们对得上，防的是
+      # "两份门禁慢慢变成不同的东西"。本作业跑的是其中 Python 侧的那几步：
+      #   文档排版检查 / 后端语法检查 / PowerShell 脚本编码检查 /
+      #   仓库静态检查（ruff：api + scripts） / 后端 pytest / provider 矩阵配置检查；
+      # 另一半（前端测试 / 前端 lint / 前端 build / 前端 E2E（真浏览器 + 真后端））
+      # 在 `verify-web` 作业里，两边并集 = 全部步骤（W13 盯着）。
+      #
+      # **不传 `--real-smoke`** —— CI 里没有 Codex CLI 也没有凭据，真实档必然失败，
+      # 而那不是"代码坏了"。同理不传 `--real-recursive-probe`。
+      #
+      # `provider 矩阵配置检查` **不需要凭据也不需要网络**（它只生成隔离 config.toml
+      # 并核对结构），所以它是常驻门禁。
+      #
+      # `CODEX_BATTLEFIELD_RUNNER=mock` 是**必须**的：`verify_all` 会调
+      # `bench_run.py` 之类的脚本，而它们默认读用户的 `runner_mode`。
+      - name: 跑 verify_all（Python 侧）
+        shell: bash
+        env:
+          CODEX_BATTLEFIELD_RUNNER: mock
+          CODEX_BATTLEFIELD_MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB: '0'
+          # Windows runner 上 Python 的默认 stdout 编码是 **cp1252**，而脚本会打印中文摘要
+          # —— 实测红在 `check_markdown_layout.py` 的 `UnicodeEncodeError: 'charmap' codec ...`。
+          # `verify_all` 也会给每个子进程钉这两个变量；这里再设一遍是为了覆盖
+          # "workflow 里直接调 python" 的情形（例如下面收集诊断那一步）。
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: '1'
+        run: |
+          if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
+          "$PY" scripts/verify_all.py --group python
+
+      - name: 失败时收集诊断
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== api/tests 最近的 pytest 缓存 ==="
+          find api -name 'lastfailed' -o -name 'pytest-*.log' 2>/dev/null | head -20 || true
+          echo "=== 环境 ==="
+          python --version || true
+
+  # 前端侧那一组：前端测试 / 前端 lint / 前端 build / 前端 E2E（真浏览器 + 真后端）。
+  # 它需要 node、pnpm、chromium，**也需要 api/.venv**（E2E 会自己起一个隔离端口/隔离库的
+  # uvicorn，见 `web/playwright.config.ts`），所以这个作业的安装步骤与本地一致。
+  verify-web:
+    name: verify-web (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -60,7 +136,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      # `.venv` 放在 `api/` 下是仓库约定（看门狗与 goal 模式按它找解释器）。
       - name: 建 venv 并装后端依赖
         shell: bash
         run: |
@@ -81,52 +156,22 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps chromium
 
-      # 门禁本身：`verify_all.py` 一次跑完下列步骤 ——
-      #   文档排版检查 / 后端语法检查 / PowerShell 脚本编码检查 /
-      #   仓库静态检查（ruff：api + scripts） / 后端 pytest /
-      #   provider 矩阵配置检查 /
-      #   前端测试 / 前端 lint / 前端 build / 前端 E2E（真浏览器 + 真后端）
-      # 这些名字是从 `scripts/verify_all.py` 里**逐字**抄的，不是概述：
-      # `api/tests/test_ci_workflow.py` 的 W9 会核对它们对得上，
-      # 防的是"两份门禁慢慢变成不同的东西"。
-      #
-      # **不传 `--real-smoke`** —— CI 里没有 Codex CLI 也没有凭据，真实档必然失败，
-      # 而那不是"代码坏了"。同理不传 `--real-recursive-probe`。
-      #
-      # `provider 矩阵配置检查` **不需要凭据也不需要网络**（它只生成隔离 config.toml
-      # 并核对结构），所以它是常驻门禁；CI 上没有 codex 时报告里 `could_load_config`
-      # 记 null（**没查**），不会伪装成通过。
-      #
-      # `前端 E2E` 需要 Playwright 的 chromium（下面那步装），它会**自己起一个后端**
-      # （隔离端口 8877 + 隔离状态根 `web/.e2e/`，`RUNNER=mock`），不碰任何常驻实例。
-      #
-      # `CODEX_BATTLEFIELD_RUNNER=mock` 是**必须**的：`verify_all` 会调
-      # `bench_run.py` 之类的脚本，而它们默认读用户的 `runner_mode`。
-      # CI 上没有那个配置，但显式钉住更安全 —— 少一次"CI 上偷偷调了真模型"的可能。
-      - name: 跑 verify_all（门禁）
+      - name: 跑 verify_all（前端侧）
         shell: bash
         env:
           CODEX_BATTLEFIELD_RUNNER: mock
           CODEX_BATTLEFIELD_MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB: '0'
-          # Windows runner 上 Python 的默认 stdout 编码是 **cp1252**，而脚本会打印中文摘要
-          # —— 实测红在 `check_markdown_layout.py` 的 `UnicodeEncodeError: 'charmap' codec ...`，
-          # Windows 那一侧连第二步都没跑到（run 38895747296 / 38943620205）。
-          # `verify_all` 也会给每个子进程钉这两个变量；这里再设一遍是为了覆盖
-          # "workflow 里直接调 python" 的情形（例如下面收集诊断那一步）。
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: '1'
         run: |
           if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
-          "$PY" scripts/verify_all.py
+          "$PY" scripts/verify_all.py --group web
 
-      # 失败时把 pytest 的完整输出与前端构建日志附上来。
-      # 没有它，PR 上只能看到"exit 1"，还得让人本地复现一遍。
       - name: 失败时收集诊断
         if: failure()
         shell: bash
         run: |
-          echo "=== api/tests 最近的 pytest 缓存 ==="
-          find api -name 'lastfailed' -o -name 'pytest-*.log' 2>/dev/null | head -20 || true
-          echo "=== 环境 ==="
-          python --version || true
+          echo "=== 前端构建产物 ==="
+          ls -la web/dist 2>/dev/null | head -20 || true
+          echo "=== 浏览器 ==="
           pnpm --version || true

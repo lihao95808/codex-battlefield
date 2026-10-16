@@ -47,6 +47,8 @@ def run_check(name: str, check: Callable[[], None]) -> None:
 
     与 `run_step` 的差别只是没有 `command` 可打印；失败同样**阻断**。
     """
+    if _skipped_by_group(name):
+        return
     print(f"\n==> {name}")
     check()
 
@@ -72,6 +74,8 @@ def step_env() -> dict[str, str]:
 
 
 def run_step(name: str, command: list[str], cwd: Path) -> None:
+    if _skipped_by_group(name):
+        return
     print(f"\n==> {name}")
     print(f"目录：{cwd}")
     print(f"命令：{' '.join(command)}")
@@ -175,11 +179,63 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="", help="真实 Codex CLI 使用的模型；默认留空，使用 Codex CLI 普通默认档。")
     parser.add_argument("--reasoning-effort", default="", help="真实 Codex CLI 推理强度；默认留空，使用 Codex CLI 普通默认档。")
     parser.add_argument("--timeout", type=int, default=300, help="真实 Codex 单次调用超时秒数。")
+    parser.add_argument(
+        "--group",
+        choices=("all", "python", "web"),
+        default="all",
+        help="只跑某一组步骤（CI 用它把同一套门禁拆到两个并行作业里；默认 all = 本机跑全量）。",
+    )
     return parser.parse_args()
 
 
+#: 步骤分组：把**同一套门禁**拆成两组，好在 CI 上跑进作业预算。
+#:
+#: 为什么要拆：Linux 侧 30 分钟不够、**45 分钟也不够**（同一套门禁 Windows 只要 16.4 分钟，
+#: 见 `docs/ci.md` §10）—— 需要的是结构性减负，不是更大的超时。按"Python 侧 / 前端侧"
+#: 拆成两个作业，两边并行，各自落进预算。
+#:
+#: ⚠️ 拆组**不是放宽**：两组的**并集必须等于全部无条件步骤** ——
+#: 判据 `api/tests/test_ci_workflow.py::test_w13_the_two_groups_cover_every_step`
+#: 会从源码里抽出所有 `run_step/run_check` 的步骤名来核对并集，少一步就红。
+STEP_GROUPS: dict[str, tuple[str, ...]] = {
+    "python": (
+        "文档排版检查",
+        "后端语法检查",
+        "PowerShell 脚本编码检查",
+        "仓库静态检查（ruff：api + scripts）",
+        "后端 pytest",
+        "provider 矩阵配置检查",
+    ),
+    "web": (
+        "前端测试",
+        "前端 lint",
+        "前端 build",
+        "前端 E2E（真浏览器 + 真后端）",
+    ),
+}
+
+#: 当前选中的组（`None` = 全跑）。`run_step`/`run_check` 用它跳过不属于本组的步骤。
+_GROUP: str = "all"
+
+
+def _skipped_by_group(name: str) -> bool:
+    """本组的集合里没有这个步骤就跳过（并**打印**出来，不做静默跳过）。"""
+
+    if _GROUP == "all":
+        return False
+    if name in STEP_GROUPS.get(_GROUP, ()):
+        return False
+    print(f"\n==> {name}（跳过：--group {_GROUP} 不含这一步）")
+    return True
+
+
+
 def main() -> None:
+    global _GROUP
     args = parse_args()
+    _GROUP = args.group
+    if _GROUP != "all":
+        print(f"（只跑分组：{_GROUP} —— 并集判据在 api/tests/test_ci_workflow.py::test_w13）")
     validate_schemas()
 
     run_step("文档排版检查", [sys.executable, str(ROOT / "scripts" / "check_markdown_layout.py"), "."], ROOT)
@@ -205,8 +261,8 @@ def main() -> None:
         ROOT,
     )
 
-    pnpm = shutil.which("pnpm")
-    if pnpm is None:
+    pnpm = shutil.which("pnpm") or ""
+    if _GROUP in ("all", "web") and not pnpm:
         raise SystemExit("找不到 pnpm，无法运行前端验证。")
     run_step("前端测试", [pnpm, "test"], ROOT / "web")
     run_step("前端 lint", [pnpm, "lint"], ROOT / "web")
