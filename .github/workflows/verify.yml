@@ -1,0 +1,99 @@
+name: verify
+
+# 在**两个平台**上跑同一套门禁（P6-3）。
+#
+# 为什么必须双平台：这个仓库原本是 Windows 优先写出来的（脚本、路径判断、
+# PowerShell 编码），而"只有本机能过"的提交是真实存在的风险 —— 本地绿、
+# 别人机器上红，而红的往往是最基础的东西（路径分隔符、编码、行尾）。
+# 双平台把这类问题挡在 PR 上，而不是等使用者踩到。
+#
+# 矩阵刻意**只有两个平台**：更多平台（macOS）带来的边际信息很低，
+# 而每个平台都是一份真实的等待时间。
+on:
+  push:
+    branches: [main, hub]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支上后推的提交取消前一次的运行 —— 门禁的价值在"最新那一版过没过"。
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 一个平台失败时**不取消另一个**：两边的失败原因常常不同，
+      # 而"只看到一边红了"会让人以为另一边是好的。
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本与 `api/pyproject.toml` 的 `requires-python = ">=3.12,<3.14"` 对齐。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # `.venv` 放在 `api/` 下是仓库约定（看门狗与 goal 模式按它找解释器）。
+      - name: 建 venv 并装后端依赖
+        shell: bash
+        run: |
+          python -m venv api/.venv
+          if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install -e "api[dev]"
+
+      - name: 装前端依赖
+        shell: bash
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      # 门禁本身：`verify_all.py` 一次跑完下列步骤 ——
+      #   文档排版检查 / 后端语法检查 / PowerShell 脚本编码检查 /
+      #   仓库静态检查（ruff：api + scripts） / 后端 pytest /
+      #   前端测试 / 前端 lint / 前端 build
+      # 这些名字是从 `scripts/verify_all.py` 里**逐字**抄的，不是概述：
+      # `api/tests/test_ci_workflow.py` 的 W9 会核对它们对得上，
+      # 防的是"两份门禁慢慢变成不同的东西"。
+      #
+      # **不传 `--real-smoke`** —— CI 里没有 Codex CLI 也没有凭据，真实档必然失败，
+      # 而那不是"代码坏了"。同理不传 `--real-recursive-probe`。
+      #
+      # `CODEX_BATTLEFIELD_RUNNER=mock` 是**必须**的：`verify_all` 会调
+      # `bench_run.py` 之类的脚本，而它们默认读用户的 `runner_mode`。
+      # CI 上没有那个配置，但显式钉住更安全 —— 少一次"CI 上偷偷调了真模型"的可能。
+      - name: 跑 verify_all（门禁）
+        shell: bash
+        env:
+          CODEX_BATTLEFIELD_RUNNER: mock
+          CODEX_BATTLEFIELD_MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB: '0'
+        run: |
+          if [ -f api/.venv/bin/python ]; then PY=api/.venv/bin/python; else PY=api/.venv/Scripts/python.exe; fi
+          "$PY" scripts/verify_all.py
+
+      # 失败时把 pytest 的完整输出与前端构建日志附上来。
+      # 没有它，PR 上只能看到"exit 1"，还得让人本地复现一遍。
+      - name: 失败时收集诊断
+        if: failure()
+        shell: bash
+        run: |
+          echo "=== api/tests 最近的 pytest 缓存 ==="
+          find api -name 'lastfailed' -o -name 'pytest-*.log' 2>/dev/null | head -20 || true
+          echo "=== 环境 ==="
+          python --version || true
+          pnpm --version || true
