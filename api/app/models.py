@@ -252,6 +252,35 @@ class StewardAction(Base):
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class GoalDelivery(Base):
+    """管家**投递目标**的记录（P4-1）。`docs/steward-delivery.md`。
+
+    ## 要解决的不是"能不能起树"，而是"起完就断线"
+
+    `start_task` 原先起完树就返回一个 root_id，之后管家与那棵树再无联系。用户于是
+    只能自己去看板里翻："第几步了？卡在哪？" —— 而这两句话恰是管家唯一该回答的东西。
+
+    所以交付要记两件事：**谁投的**（供事后归因）与**起点在哪**（`root_id`），
+    然后由 `delivery.progress()` 把"第几步、卡在哪"实时读出来。
+
+    ## 为什么记 `author` 而不是"当前用户"
+
+    这个工具没有登录体系，"谁"在这里只能是**调用者自报的一个名字**。
+    如实记录成 `author` 并允许为空 —— 假装知道用户是谁，比坦诚地不知道更糟。
+    """
+
+    __tablename__ = "goal_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    root_id: Mapped[str] = mapped_column(String(64), index=True)
+    goal: Mapped[str] = mapped_column(Text, default="")
+    # 谁投的（自报）。**允许为空** —— 没有登录体系时不该假知道。
+    author: Mapped[str] = mapped_column(String(120), default="")
+    # 靠什么起的（`steward_action` / `one_shot` / `manual`）
+    source: Mapped[str] = mapped_column(String(32), default="steward_action", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class AttentionClaim(Base):
     """管家与看门狗之间"这件事我在处理"的记录（P4-3）。`docs/steward-watchdog-loop.md`。
 

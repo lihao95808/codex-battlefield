@@ -170,7 +170,31 @@ async def _exec_start_task(orchestrator: Any, target: str) -> str:
     if not goal:
         raise ActionError("起新树需要给出目标描述（放在 target 里）。")
     root_id = await orchestrator.start_one_shot_project(goal)
+    _record_delivery(root_id, goal)
     return f"已起新树，根节点 {root_id}。"
+
+
+def _record_delivery(root_id: Any, goal: str) -> None:
+    """把这次起树记成一次**目标投递**（P4-1）。
+
+    为什么要记：管家起完树就与那棵树失去联系，用户只能自己去翻看板问
+    "第几步、卡在哪"。有这条记录之后，管家每次被问到时都能读出实时进度。
+
+    **记不上不能让起树失败**：树已经起了，这里是记账，账记不上只是"报告里少一条"，
+    而回滚一棵已经跑起来的树要糟得多。所以这里吞掉异常 —— 但**只在真的记不上时**，
+    不做无差别 try。
+    """
+    from . import delivery
+    from .database import SessionLocal
+
+    text = str(root_id or "").strip()
+    if not text:
+        return
+    try:
+        with SessionLocal() as db:
+            delivery.record(db, root_id=text, goal=goal, source="steward_action")
+    except Exception:  # noqa: BLE001 - 记账失败不该让已经起来的树回滚
+        return
 
 
 EXECUTORS: dict[str, Executor] = {

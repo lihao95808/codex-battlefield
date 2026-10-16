@@ -843,6 +843,44 @@ export interface TuningResponse {
   note: string;
 }
 
+/** 目标投递 + 实时进度（`GET /api/deliveries/latest`，P4-1）。 */
+export interface DeliveryRecord {
+  id: number;
+  root_id: string;
+  goal: string;
+  author: string;
+  source: string;
+  created_at: string | null;
+}
+
+export interface DeliveryProgress {
+  root_id: string | null;
+  goal: string;
+  author: string;
+  /** false = 这棵树读不到（没节点）。**不是**"还没开始"。 */
+  available: boolean;
+  reason: string;
+  done: number;
+  total: number;
+  /** 分母为 0 时是 null，不是 0 —— 0% 会被读成"一点没做"。 */
+  ratio: number | null;
+  status_counts?: Record<string, number>;
+  frontier: { id: string; title: string; status: string; depth: number }[];
+  stuck: { id: string; title: string; status: string; error: string }[];
+  blocking_obligations: { id: string; type: string; node_id: string }[];
+  next_step: string;
+  /** 这份进度里**没能确定**的地方。 */
+  incomplete: string[];
+}
+
+export interface DeliveryResponse {
+  available: boolean;
+  reason: string;
+  delivery: DeliveryRecord | null;
+  progress: DeliveryProgress | null;
+  summary?: string;
+}
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */

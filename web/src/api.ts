@@ -8,6 +8,7 @@ import type {
   ConstitutionResponse,
   CostReport,
   CrossProjectResponse,
+  DeliveryResponse,
   ObligationIndexBoard,
   PreAuthorizationResponse,
   RunArtifactResponse,
@@ -271,6 +272,20 @@ export async function saveConclusion(input: {
 /** 导出链接（直接给 `<a href>` 用；返回的是 Markdown 附件）。 */
 export function conclusionExportUrl(conclusionId: number): string {
   return `/api/conclusions/${conclusionId}/export`;
+}
+
+/**
+ * 最近一次目标投递 + 它的**实时**进度（P4-1）。
+ *
+ * 回答"第几步、卡在哪"。没有投递过时 `available: false` + 原因 —— **不报 0/0**。
+ */
+export async function fetchDelivery(author?: string): Promise<DeliveryResponse> {
+  const query = author ? `?author=${encodeURIComponent(author)}` : '';
+  const response = await fetch(`/api/deliveries/latest${query}`);
+  if (!response.ok) {
+    throw new Error('投递进度读取失败：' + response.status);
+  }
+  return response.json();
 }
 
 /**

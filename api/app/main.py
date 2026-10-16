@@ -24,6 +24,7 @@ from . import (
     conclusions as conclusions_mod,
     cost as cost_mod,
     cross_project,
+    delivery as delivery_mod,
     watchdog_tuning as watchdog_tuning_mod,
     diagnostics as diagnostics_mod,
     project_store,
@@ -988,6 +989,72 @@ def _open_blocking_obligations(db: Session, root_id: str) -> list[dict]:
         for item in items
         if isinstance(item, dict) and str(item.get("severity") or "") == "blocking"
     ]
+
+
+@app.get("/api/deliveries/latest")
+def delivery_latest(
+    author: str = Query(default=""),
+    db: Session = Depends(get_db),
+) -> dict:
+    """最近一次目标投递 + 它的**实时**进度（P4-1）。
+
+    回答"第几步、卡在哪"。**不含后台推送**：管家是对话者，它的报告应当发生在
+    有人看的时候 —— 推送会把"树在动"变成消息流，而这个工具已经有看门狗在做
+    后台判断了。
+
+    `author` 可选：多人共用一台机器时，"我投的那个"不该拿到别人的树。
+    """
+    row = delivery_mod.latest(db, author=author)
+    if row is None:
+        return {
+            "available": False,
+            "reason": "还没有通过管家投递过目标。",
+            "delivery": None,
+            "progress": None,
+        }
+
+    tree = orchestrator.get_tree(db, root_id=row.root_id)
+    obligations = _open_blocking_obligations(db, row.root_id)
+    # `get_tree` 的返回值里**没有** `root_id`（它不是树的一部分，是查询参数）。
+    # 不显式补上的话 `progress()` 会报"读不到 root_id —— 这份进度可能不属于你以为的
+    # 那棵树"，于是每一条投递报告都拖着一条假警报 —— 而假警报会让真警报被无视。
+    snapshot = delivery_mod.progress(
+        {"root_id": row.root_id, "tasks": tree.get("tasks") or []},
+        open_obligations=obligations,
+        goal=row.goal,
+        author=row.author,
+    )
+    return {
+        "available": True,
+        "reason": "",
+        "delivery": delivery_mod.payload(row),
+        "progress": snapshot,
+        "summary": delivery_mod.summary_line(snapshot),
+    }
+
+
+@app.post("/api/deliveries")
+def delivery_record(payload: dict, db: Session = Depends(get_db)) -> dict:
+    """记一次目标投递（P4-1）。
+
+    管家起树时由服务端自己记（`steward_actions._record_delivery`），这个端点留给
+    "通过别的路径起了树但想让它进管家视野"的情形。
+
+    **`root_id` 必填**：一次"投递"的定义就是"确实起出了一棵树" ——
+    起树失败时留下一条记录，会让"我投过这个目标"看起来像发生过。
+    """
+    _ensure_mutable()
+    try:
+        row = delivery_mod.record(
+            db,
+            root_id=str(payload.get("root_id") or ""),
+            goal=str(payload.get("goal") or ""),
+            author=str(payload.get("author") or ""),
+            source=str(payload.get("source") or "manual"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return delivery_mod.payload(row)
 
 
 @app.get("/api/attention")

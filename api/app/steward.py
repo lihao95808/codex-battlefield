@@ -126,9 +126,60 @@ def parse_chat(payload: Any) -> StewardChat:
 
 
 def build_context(db: Session, settings: Any, user_message: str, history_text: str) -> tuple[str, str]:
-    """拼出喂给 runner 的两块文本：状态快照、能力目录。"""
+    """拼出喂给 runner 的两块文本：状态快照、能力目录。
+
+    ## 为什么状态快照里要带"投递进度"（P4-1）
+
+    管家起完树就与那棵树失去联系，于是用户问"第几步了、卡在哪"时它只能含糊其辞。
+    把**最近一次投递**的进度塞进快照，它才能开口讲这两件事 —— 而"直接读最新状态"
+    比"维护一份增量推送"更不容易出错：不存在漏推、也不存在状态漂移。
+    """
     snapshot = build_status(db, settings)
+    snapshot["delivery"] = _delivery_block(db)
     status_text = json.dumps(snapshot, ensure_ascii=False, indent=2)
     caps = catalog(read_only=bool(settings.steward_read_only))
     caps_text = json.dumps(caps, ensure_ascii=False, indent=2)
     return status_text, caps_text
+
+
+def _delivery_block(db: Session) -> dict[str, Any]:
+    """最近一次投递的进度。**没有投递过就如实说没有**，不编一棵树出来。"""
+    from . import delivery
+    from .models import TaskNode
+
+    row = delivery.latest(db)
+    if row is None:
+        return {"available": False, "reason": "还没有通过管家投递过目标。"}
+
+    tasks = db.query(TaskNode).all()
+    tree_tasks = [
+        {
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "depth": task.depth,
+            "error_message": task.error_message,
+        }
+        for task in tasks
+    ]
+    # 债读不到时传 `None`（"没查"），而不是空列表（"查了，没有"）。
+    try:
+        from . import obligation_index
+
+        board = obligation_index.board(db, status="open")
+        items = board.get("items") if isinstance(board, dict) else None
+        obligations: list[dict[str, Any]] | None = list(items) if isinstance(items, list) else None
+    except Exception:  # noqa: BLE001 - 索引坏了不该让管家的上下文整个拼不出来
+        obligations = None
+
+    snapshot = delivery.progress(
+        # `root_id` 必须显式补上：它不是树的一部分，而是查询参数。
+        {"root_id": row.root_id, "tasks": tree_tasks},
+        open_obligations=obligations,
+        goal=row.goal,
+        author=row.author,
+    )
+    snapshot["delivery_id"] = row.id
+    snapshot["delivered_at"] = row.created_at.isoformat() if row.created_at else None
+    snapshot["summary"] = delivery.summary_line(snapshot)
+    return snapshot

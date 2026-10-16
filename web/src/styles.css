@@ -5192,3 +5192,110 @@ select:focus {
   color: #8a94a6;
   text-decoration: line-through;
 }
+/* ---------- 目标投递与进度（P4-1）----------
+   进度是主角，卡点在它下面且更显眼（红边）—— "要不要我介入"比"做了多少"更重要。 */
+.delivery-panel {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #3f6ea8;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.delivery-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dp-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.dp-count::before { content: '('; }
+.dp-count::after { content: ')'; }
+
+.dp-goal {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #1f3a5f;
+  word-break: break-all;
+}
+
+.dp-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #6b7a90;
+  word-break: break-all;
+}
+
+.dp-progress {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dp-ratio {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f3a5f;
+  font-variant-numeric: tabular-nums;
+}
+
+.dp-progress-text {
+  font-size: 11px;
+  color: #4a5768;
+}
+
+.dp-next {
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+  border-radius: 4px;
+}
+
+.dp-blockers {
+  margin-top: 6px;
+  padding: 5px 7px;
+  background: #fdeeee;
+  border: 1px solid #e9c2c2;
+  border-radius: 5px;
+}
+
+.dp-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #822727;
+}
+
+.dp-blockers ul,
+.dp-frontier ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+.dp-blockers li { color: #822727; }
+.dp-frontier { margin-top: 6px; }
+.dp-frontier .dp-section-title { color: #4a5768; }
+.dp-frontier li { color: #4a5768; }
+
+.dp-incomplete {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: #8a7550;
+}
