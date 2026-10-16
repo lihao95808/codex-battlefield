@@ -123,3 +123,36 @@ Linux 上容器内 UID 10001 与宿主机用户的 UID 不同，`git` 会报
 * **compose 里没有配资源上限**（`mem_limit` / `cpus`）。机器安全守卫因此被显式关掉了
   （`MACHINE_SAFETY_MIN_AVAILABLE_MEMORY_MB=0`）—— 容器里读到的是**宿主机**的内存，
   守卫会误判。要保留守卫就得给容器设限额并把这个阈值调到相符的值。
+
+## 不需要 Docker 也能验的那一半（D1–D8）
+
+`api/tests/test_container.py` 核的是**结构与取舍**（非 root、卷、端口、版本对齐、
+被引用的文件存在）。本轮补了 `api/tests/test_container_static.py`：核**语法与自洽**，
+这些在语法层面就能验，而且**能红**。
+
+为什么值得单独有一组：Dockerfile 里拼错的指令、`RUN` 里写了 `sudo`、缓存层顺序颠倒、
+三处端口各写一个 —— 这些在真的 `docker build` 之前**完全静默**，而本机没有 Docker。
+
+| 判据 | 查什么 |
+|---|---|
+| D1 | 每条指令都是已知的 Docker 关键字（拼错的指令不会在别处报错）；首条是 `FROM`；两个阶段齐备 |
+| D2 | 全文件没有 `sudo`；`USER` 出现在装包/建用户**之后**（否则那个 `USER` 是装饰） |
+| D3 | **源码 COPY 排在所有 install 之后**、依赖清单先于源码（否则缓存层白设） |
+| D4 | 基础镜像都带 tag 且不是 `latest` |
+| D5 | `WORKDIR` 在 `CMD` 之前；`CMD` 里的 `模块:app` 与 `pip install -e /app/api`、`api/app/main.py` 三处对得上 |
+| D6 | `HEALTHCHECK` 打 `/api/health`；`HEALTHCHECK` / `CMD` / `EXPOSE` 三处端口一致 |
+| D7 | compose 把卷挂到镜像里那个状态根上；端口只发布在 `127.0.0.1` |
+| D8 | 解析器自身可信（折行折叠、`CMD` 的 JSON 形式可解析） |
+
+五组变异全部能红：拼错指令名、`RUN` 里加 `sudo`、把源码 `COPY` 提到 `pip install` 之前、
+健康检查换端口、compose 端口发布到所有网卡。
+
+### 判据自己写错的三次（都记在这里，因为它们比判据本身更有价值）
+
+1. **续行之间的整行注释**被当成新指令 —— `ENV A=1 \` 后面那行注释一插，
+   后面的 `B=2` 就变成"未知指令"；
+2. **反引号**（文档里写的 `` `/state` ``）被当成值的一部分，`/state` 与 `` `/state` `` 不等；
+3. **"源码 COPY"认错了**：第一版找 `"pip install -e /app/api" in text`，结果先命中
+   `COPY api/pyproject.toml` —— 判据变成"pip install 要在清单拷贝之前"，当然红。
+   正确的不变量是"**套件源码目录的那个 COPY 在所有 install 之后**"，
+   而且要按"源以 `/` 结尾"来区分目录拷贝与清单拷贝。
