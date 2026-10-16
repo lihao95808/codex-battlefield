@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import (
+    action_risk,
     auto_policy,
     cost as cost_mod,
     cross_project,
@@ -812,6 +813,86 @@ def _action_payload(row: Any) -> dict:
         "decided_at": row.decided_at.isoformat() if row.decided_at else None,
         "executed_at": row.executed_at.isoformat() if row.executed_at else None,
     }
+
+
+@app.get("/api/steward/pre-authorization")
+def steward_pre_authorization() -> dict:
+    """当前预授权状态 + 动作风险目录（P4-4）。
+
+    刻意把**目录**一起报出来：用户要先看到"哪些动作是高风险的、永远不能预授权"，
+    才谈得上决定要不要开预授权。只报当前那条授权的话，界面只能显示一个动作名列表，
+    而"它有多危险"是这里唯一重要的信息。
+    """
+    from .steward_actions import known_actions
+
+    names = list(known_actions())
+    grant = steward_actions.pre_authorization.grant
+    return {
+        "catalog": action_risk.catalog(names),
+        "levels": [
+            {
+                "level": level,
+                "label": action_risk.RISK_LABEL[level],
+                "rationale": action_risk.RISK_RATIONALE[level],
+            }
+            for level in action_risk.RISK_LEVELS
+        ],
+        "grant": (
+            {
+                "actions": list(grant.actions),
+                "targets": list(grant.targets),
+                "expires_at": grant.expires_at.isoformat(),
+                "remaining_seconds": max(0, grant.remaining_seconds()),
+                "granted_by": grant.granted_by,
+                "reason": grant.reason,
+            }
+            if grant is not None
+            else None
+        ),
+        "high_risk_never_pre_authorized": True,
+        "note": (
+            "预授权放宽的是**确认次数**，不是权限边界：高风险动作（取消、全停、改额度闸）"
+            "在任何授权下都仍然需要人点。默认没有授权 —— 出厂状态是每次都要人确认。"
+        ),
+    }
+
+
+@app.post("/api/steward/pre-authorization")
+def steward_set_pre_authorization(payload: dict) -> dict:
+    """授予一条预授权（P4-4）。**范围与期限都必填**，且必须署名。"""
+    _ensure_mutable()
+    _ensure_steward_mutable()
+    try:
+        grant = action_risk.make_grant(
+            actions=[str(item) for item in (payload.get("actions") or [])],
+            targets=[str(item) for item in (payload.get("targets") or [])],
+            minutes=int(payload.get("minutes") or 0),
+            granted_by=str(payload.get("granted_by") or ""),
+            reason=str(payload.get("reason") or ""),
+        )
+    except (action_risk.RiskError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    steward_actions.pre_authorization.set(grant)
+    return {
+        "status": "granted",
+        "actions": list(grant.actions),
+        "targets": list(grant.targets),
+        "expires_at": grant.expires_at.isoformat(),
+        "remaining_seconds": max(0, grant.remaining_seconds()),
+        "message": (
+            f"预授权已生效：{len(grant.actions)} 个动作、"
+            f"{len(grant.targets) or '不限'}个目标、{grant.remaining_seconds()} 秒后过期。"
+            "高风险动作不在此范围内，仍然需要你逐个确认。"
+        ),
+    }
+
+
+@app.delete("/api/steward/pre-authorization")
+def steward_clear_pre_authorization() -> dict:
+    """撤销预授权，立刻回到"每次都要人点"。"""
+    _ensure_mutable()
+    steward_actions.pre_authorization.clear()
+    return {"status": "cleared", "message": "预授权已撤销，之后每个动作都需要你确认。"}
 
 
 @app.get("/api/steward/actions")

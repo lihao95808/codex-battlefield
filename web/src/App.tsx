@@ -58,6 +58,7 @@ import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
 import { CostPanel } from './CostPanel';
 import { PolicyPanel } from './PolicyPanel';
+import { PreAuthPanel } from './PreAuthPanel';
 import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
@@ -1370,6 +1371,8 @@ export function App() {
         <CostPanel />
 
         <PolicyPanel />
+
+        <PreAuthPanel />
 
         <StateAdminPanel />
 

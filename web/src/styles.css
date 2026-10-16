@@ -4771,3 +4771,120 @@ select:focus {
   color: #8a7550;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* ---------- 预授权（P4-4）----------
+   这是权限模型的实质性放宽，所以视觉上刻意"重"：
+   高风险行红边且不可勾，表单字段全是必填。 */
+.preauth-panel {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #8a6d3b;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.preauth-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pa-badge {
+  font-size: 10px;
+  font-weight: 400;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.pa-badge-off { background: #f2f4f7; color: #5d6b7e; border: 1px solid #dbe3ef; }
+.pa-badge-on { background: #fdf6ec; color: #7a5310; border: 1px solid #e8d3ab; }
+
+.pa-active {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #fffdf7;
+  border: 1px solid #e8d3ab;
+  border-radius: 6px;
+}
+
+.pa-active-line {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #6b4a12;
+  word-break: break-all;
+}
+
+.pa-warning {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #822727;
+}
+
+.pa-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pa-row {
+  padding: 5px 7px;
+  border: 1px solid #e3e9f2;
+  border-left-width: 3px;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.pa-high { border-left-color: #a83232; background: #fffafa; }
+.pa-medium { border-left-color: #d0982f; }
+.pa-low { border-left-color: #4a7a5f; }
+
+.pa-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pa-check {
+  margin: 0;
+}
+
+.pa-check:disabled {
+  cursor: not-allowed;
+}
+
+.pa-action {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.pa-risk {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.pa-risk-high { background: #fdeeee; color: #822727; border: 1px solid #e9c2c2; }
+.pa-risk-medium { background: #fdf6ec; color: #7a5310; border: 1px solid #e8d3ab; }
+.pa-risk-low { background: #eef6f0; color: #2f5d4f; border: 1px solid #c6e0d2; }
+
+.pa-rationale {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #6b7a90;
+}
+
+.pa-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

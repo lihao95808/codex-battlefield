@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from .steward_capabilities import CAPABILITIES
+from . import action_risk
 
 # 动作名 -> 能力声明。只认 mutating 的那些：只读能力不需要审批，
 # 管家直接调就行（它本来就是只读的）。
@@ -215,14 +216,47 @@ def _now() -> Any:
     return utcnow()
 
 
-def propose(db: Any, proposed: list[dict[str, Any]], *, read_only: bool) -> tuple[list[Any], list[str]]:
-    """把管家的建议落成 `pending` 动作。返回 `(入队的动作, 被拒的原因)`。
+# ---- 预授权（P4-4）----
+#
+# 进程内单例，与编排层一致：审计要能回答"这个动作凭什么被执行"，
+# 而答案为"某条挂在进程上的授权"比"翻三条叠加的授权记录"可读得多。
+#
+# **默认没有授权**（见 `action_risk.default_grant`）：出厂状态是"每个动作都要人点"。
+pre_authorization = action_risk.PreAuthorization()
+
+
+def propose(
+    db: Any,
+    proposed: list[dict[str, Any]],
+    *,
+    read_only: bool,
+    pre_authorized_bypass: bool = True,
+) -> tuple[list[Any], list[str]]:
+    """把管家的建议落成动作。返回 `(入队的动作, 被拒的原因)`。
 
     **不合法的建议不写库，而是把原因回给调用方**：
     写进去会让界面上出现"点了会失败"的按钮，而用户看不出来它为什么坏。
     拒掉并说明原因，用户才能判断是模型幻觉还是自己该补参数。
 
     `read_only` 只影响**执行**，不影响**提议** —— 建议是管家最有价值的产出之一。
+
+    ## 预授权（P4-4）
+
+    `pre_authorized_bypass=True` 且**不在只读模式**时，命中预授权的提议会
+    **直接落成 `approved`**，并在 `result` 里写下依据（谁授的、还剩多久）。
+    三条规矩：
+
+    * **高风险永远不走这条路**（`action_risk.can_pre_authorize` 是常量判断，
+      不是配置项）；
+    * **只读模式是独立的一道闸**，预授权不越过它 —— 那是"整机/管家是否允许动树"
+      的开关，与"这个动作要不要逐次确认"是两件事；
+    * 没命中就照旧 `pending`，**不写 `result`** —— `result` 是执行结果（既有约定：
+      被拒的动作 `result` 为空）。未命中的原因由 `/api/steward/pre-authorization`
+      现算现报，塞进 `result` 会让"这个动作执行过没有"读不出来。
+
+    返回值**保持两个**（不把"自动批准了哪些"加进签名）：自动批准的那些
+    就在返回的行里（`status == APPROVED`），调用方按状态筛一下即可。
+    多一个返回值等于让所有既有调用点都改一遍，而它们并不关心这件事。
     """
     from .models import StewardAction
 
@@ -240,7 +274,22 @@ def propose(db: Any, proposed: list[dict[str, Any]], *, read_only: bool) -> tupl
         except ActionError as exc:
             rejected.append(f"{action}: {exc}")
             continue
-        row = StewardAction(action=action, target=target, why=why, risk=risk, status=PENDING)
+
+        status = PENDING
+        # 只有**真的靠预授权批准**时才写 `result`。
+        # "未命中授权"不写：`result` 是**执行结果**（既有约定：被拒的动作 `result` 为空），
+        # 把"为什么没命中"塞进去会让"动作执行过没有"这个问题变得读不出来。
+        # 未命中的原因由 `/api/steward/pre-authorization` 现算现报。
+        basis = ""
+        if pre_authorized_bypass and not read_only:
+            allowed, _code, reason = pre_authorization.authorize(action, target)
+            if allowed:
+                status = APPROVED
+                basis = f"[预授权] {reason}"
+
+        row = StewardAction(
+            action=action, target=target, why=why, risk=risk, status=status, result=basis
+        )
         db.add(row)
         queued.append(row)
     if queued:
@@ -248,6 +297,15 @@ def propose(db: Any, proposed: list[dict[str, Any]], *, read_only: bool) -> tupl
         for row in queued:
             db.refresh(row)
     return queued, rejected
+
+
+def auto_approved(rows: list[Any]) -> list[Any]:
+    """从 `propose()` 的返回值里挑出"靠预授权直接批准"的那些。
+
+    单独一个函数而不是让调用方自己比字符串：状态常量只有这里知道，
+    散到调用方去比字符串，改常量名时会漏。
+    """
+    return [row for row in rows if row.status == APPROVED]
 
 
 def list_actions(db: Any, *, status: str = "", limit: int = 50) -> list[Any]:

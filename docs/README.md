@@ -11,6 +11,7 @@
 | [`cost-accounting.md`](cost-accounting.md) | 花费归因与成本预测的口径：四类"读不到"怎么分辨、预测为什么给区间、`blocked` 为什么不算样本 |
 | [`scale-baseline.md`](scale-baseline.md) | 千节点规模基线：怎么量的、实测数字、阈值凭什么定这么高、变异测试记录 |
 | [`auto-policy.md`](auto-policy.md) | 自动策略：四条策略的触发条件、为什么"拿不到数据不触发"、为什么只判定不执行 |
+| [`action-risk.md`](action-risk.md) | 动作风险分级与预授权：为什么高风险是常量不可预授权、三道闸的关系、授权记录里留什么痕 |
 | [`checkpoint-git-anchor.md`](checkpoint-git-anchor.md) | 检查点、账本、Git 锚点与恢复 |
 | [`provider-setup.md`](provider-setup.md) | 可选：把节点的 Codex CLI 指向你自己的 OpenAI 兼容端点，不装不影响使用 |
 | [`bilingual-ui.md`](bilingual-ui.md) | 界面双语与术语表：覆盖范围怎么声明、8 条不变量是什么、加语言/加文案的操作顺序 |

@@ -42,6 +42,7 @@ export const LOCALIZED: LocalizedFile[] = [
 export const PENDING: string[] = [
   'CostPanel.tsx',
   'PolicyPanel.tsx',
+  'PreAuthPanel.tsx',
   'CrossProjectPanel.tsx',
   'StateAdminPanel.tsx',
   'SettingsPanel.tsx',

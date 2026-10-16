@@ -704,6 +704,41 @@ export interface AutoPolicyReport {
 /** 面板上的三态。**关闭优先于触发**（关了就永远不会触发）。 */
 export type PolicyStatus = 'disabled' | 'fired' | 'idle';
 
+/** 动作风险目录的一项（`GET /api/steward/pre-authorization`，P4-4）。 */
+export interface PreAuthCatalogItem {
+  action: string;
+  risk: 'low' | 'medium' | 'high';
+  label: string;
+  rationale: string;
+  /** `false` = 高风险，**永远**不能预授权。 */
+  pre_authorizable: boolean;
+}
+
+export interface PreAuthRiskLevel {
+  level: 'low' | 'medium' | 'high';
+  label: string;
+  rationale: string;
+}
+
+export interface PreAuthGrant {
+  actions: string[];
+  /** 空数组 = 不限目标（但仍受动作集与期限约束）。 */
+  targets: string[];
+  expires_at: string;
+  remaining_seconds: number;
+  granted_by: string;
+  reason: string;
+}
+
+export interface PreAuthorizationResponse {
+  catalog: PreAuthCatalogItem[];
+  levels: PreAuthRiskLevel[];
+  /** `null` = 没有授权（出厂状态：每个动作都要人点）。 */
+  grant: PreAuthGrant | null;
+  high_risk_never_pre_authorized: boolean;
+  note: string;
+}
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */

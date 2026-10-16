@@ -6,6 +6,7 @@ import type {
   CostReport,
   CrossProjectResponse,
   ObligationIndexBoard,
+  PreAuthorizationResponse,
   RunArtifactResponse,
   BindProjectResponse,
   MountedProjectsResponse,
@@ -196,6 +197,70 @@ export async function saveSettings(
     throw new Error(detail || '保存失败：' + response.status);
   }
   return response.json();
+}
+
+/**
+ * 预授权状态与动作风险目录（P4-4）。
+ *
+ * 目录一起拿回来是有意的：用户要先看到"哪些动作永远不能预授权"，才谈得上决定
+ * 要不要开预授权。
+ */
+export async function fetchPreAuthorization(): Promise<PreAuthorizationResponse> {
+  const response = await fetch('/api/steward/pre-authorization');
+  if (!response.ok) {
+    throw new Error('预授权状态读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 授予一条预授权。**范围与期限都必填，且必须署名** —— 后端会独立再校验一次。
+ *
+ * 高风险动作会被后端 400 拒绝（界面也把它们标成不可勾选）：放宽权限是实质性的，
+ * 不该只靠界面挡住。
+ */
+export async function grantPreAuthorization(input: {
+  actions: string[];
+  targets?: string[];
+  minutes: number;
+  grantedBy: string;
+  reason?: string;
+}): Promise<{ status: string; message: string }> {
+  const response = await fetch('/api/steward/pre-authorization', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      actions: input.actions,
+      targets: input.targets ?? [],
+      minutes: input.minutes,
+      granted_by: input.grantedBy,
+      reason: input.reason ?? '',
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '授予预授权失败'));
+  }
+  return response.json();
+}
+
+/** 撤销预授权，立刻回到"每次都要人点"。 */
+export async function revokePreAuthorization(): Promise<{ status: string; message: string }> {
+  const response = await fetch('/api/steward/pre-authorization', { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '撤销预授权失败'));
+  }
+  return response.json();
+}
+
+/** 把后端 `detail` 抽出来（FastAPI 的错误体）。抽不到就退回状态码。 */
+async function readDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: string };
+    if (body.detail) return body.detail;
+  } catch {
+    // 不是 JSON 就走下面的 fallback。
+  }
+  return `${fallback}：${response.status}`;
 }
 
 /**
