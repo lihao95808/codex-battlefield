@@ -26,6 +26,7 @@ from . import (
     cross_project,
     delivery as delivery_mod,
     metrics as metrics_mod,
+    retention as retention_mod,
     watchdog_tuning as watchdog_tuning_mod,
     diagnostics as diagnostics_mod,
     project_store,
@@ -1164,6 +1165,77 @@ def delivery_record(payload: dict, db: Session = Depends(get_db)) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return delivery_mod.payload(row)
+
+
+def _retention_days() -> int:
+    """当前保留窗口（天）。
+
+    ⚠️ **不能写 `or DEFAULT`**：`0` 是合法值（"只留还原锚点"），而 `0 or 7` 会得到 7 ——
+    于是用户把窗口设成 0 之后，实际行为是"保留 7 天"，设置面板上显示的还是 0。
+    这类"设了不生效"没有任何报错。实测由 `test_s4` 抓到（那次清理什么都没删）。
+
+    只有"字段缺失/为 None"才用默认值 —— 区分"没设"与"设成 0"。
+    """
+    configured = getattr(orchestrator.settings, "data_retention_days", None)
+    if configured is None:
+        return retention_mod.DEFAULT_RETENTION_DAYS
+    return int(configured)
+
+
+def _retention_plan_or_400() -> "retention_mod.Plan":
+    """算计划；窗口非法时给 400 而不是 500。
+
+    `normalize_days` 会为越界值抛 `RetentionError` —— 那是**用户配置错**，
+    必须当 4xx 报出去。第一版没接住，端点直接 500（实测）。
+    """
+    try:
+        days = retention_mod.normalize_days(_retention_days())
+    except retention_mod.RetentionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return retention_mod.plan(
+        project_dir=orchestrator.settings.layout.project_dir, retention_days=days
+    )
+
+
+@app.get("/api/retention")
+def retention_plan() -> dict:
+    """**数据保留的预演计划**（P5-4）。**纯只读，不删任何东西。**
+
+    返回三样：可清理项（带理由与大小）、**受保护项**（带理由）、判不了的项。
+
+    为什么必须列"受保护项"：这一层的失效方向是"某天真的需要恢复时才发现恢复不了"，
+    而那时离清理已经很远。所以"我没有删掉不该删的"必须是**可核对**的，
+    而不是一句承诺 —— 清单就是它的核对方式。
+    """
+    result = _retention_plan_or_400()
+    days = retention_mod.normalize_days(_retention_days())
+    payload = result.payload()
+    payload["retention_days"] = days
+    payload["summary"] = retention_mod.summary(result, retention_days=days)
+    payload["default_days"] = retention_mod.DEFAULT_RETENTION_DAYS
+    payload["note"] = (
+        "任务树、宪法、事件、债务与**每棵树最新的那份快照**永不清理；"
+        "工作树由 `worktrees.decide()` 单独管，这里不碰。"
+    )
+    return payload
+
+
+@app.post("/api/retention/sweep")
+def retention_sweep(payload: dict | None = None) -> dict:
+    """按计划清理（P5-4）。**默认是预演** —— 必须显式 `dry_run: false` 才真删。
+
+    为什么默认预演：这个模块的失效方向是"某天需要恢复时才发现恢复不了"，
+    而那时离清理已经很远。让"真删"必须显式要一次，是这里唯一便宜的保险。
+    """
+    _ensure_mutable()
+    body = payload or {}
+    dry_run = bool(body.get("dry_run", True))
+    result = _retention_plan_or_400()
+    days = retention_mod.normalize_days(_retention_days())
+    report = retention_mod.sweep(result, dry_run=dry_run)
+    report["retention_days"] = days
+    report["summary"] = retention_mod.summary(result, retention_days=days)
+    return report
 
 
 @app.get("/api/metrics")

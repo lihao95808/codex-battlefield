@@ -377,6 +377,12 @@ class Settings:
         )
         or 3
     )
+
+    # 数据保留窗口（天，P5-4）。默认为内置保守值 —— 见 `app/retention.py` 的模块文档：
+    # 这一层的失效方向是"某天需要恢复时才发现恢复不了"，而少留的那一侧不可逆。
+    data_retention_days: int = int(
+        _env_or_config("CODEX_BATTLEFIELD_DATA_RETENTION_DAYS", "data_retention_days") or 0
+    )
     auto_concurrency_resource_cooldown_seconds: int = int(
         os.getenv("CODEX_BATTLEFIELD_AUTO_CONCURRENCY_RESOURCE_COOLDOWN_SECONDS", "900")
     )

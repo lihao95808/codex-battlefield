@@ -147,6 +147,19 @@ SETTINGS: tuple[EditableSetting, ...] = (
             "吃光，而看板上显示的是'在跑'。"
         ),
     ),
+    EditableSetting(
+        key="data_retention_days",
+        env="CODEX_BATTLEFIELD_DATA_RETENTION_DAYS",
+        label="数据保留（天）",
+        kind="int",
+        group="policy",
+        minimum=0,
+        maximum=365,
+        help=(
+            "超过这个天数的运行日志/提示词/完整检查点会被清理。**0 表示只留还原锚点**。"
+            "任务树、宪法、事件、债务与每棵树最新的那份快照**永不清理**。"
+        ),
+    ),
     # ---------- 管家 ----------
     EditableSetting(
         key="steward_read_only",
