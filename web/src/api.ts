@@ -2,6 +2,8 @@ import type {
   ApiRestartDrainResponse,
   AutoPolicyReport,
   BudgetGuardResponse,
+  ConclusionDraft,
+  ConclusionPayload,
   ConstitutionResponse,
   CostReport,
   CrossProjectResponse,
@@ -197,6 +199,75 @@ export async function saveSettings(
     throw new Error(detail || '保存失败：' + response.status);
   }
   return response.json();
+}
+
+/**
+ * 生成结论文档草稿（P4-5）。**不落库** —— 草稿是给人改的中间产物。
+ *
+ * 事实由代码抽（影响面、决策点、代价、未清债），"当时为什么这么决定"留空由人补。
+ */
+export async function fetchConclusionDraft(rootId?: string, nodeId?: string): Promise<ConclusionDraft> {
+  const params = new URLSearchParams();
+  if (rootId) params.set('root_id', rootId);
+  if (nodeId) params.set('node_id', nodeId);
+  const query = params.toString() ? `?${params}` : '';
+  const response = await fetch(`/api/conclusions/draft${query}`);
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '生成草稿失败'));
+  }
+  return response.json();
+}
+
+/** 结论文档清单。 */
+export async function fetchConclusions(rootId?: string): Promise<{ conclusions: ConclusionPayload[] }> {
+  const query = rootId ? `?root_id=${encodeURIComponent(rootId)}` : '';
+  const response = await fetch(`/api/conclusions${query}`);
+  if (!response.ok) {
+    throw new Error('结论清单读取失败：' + response.status);
+  }
+  return response.json();
+}
+
+/**
+ * 落一份结论。**`authored` 必填** —— 后端会独立再校验一次。
+ *
+ * 写结论不受管家只读限制：只读禁的是"替用户动树"，归档文档不动任何东西。
+ */
+export async function saveConclusion(input: {
+  rootId: string;
+  authored: string;
+  title?: string;
+  nodeId?: string;
+  author?: string;
+  facts?: unknown;
+  incomplete?: string[];
+  status?: string;
+  conclusionId?: number;
+}): Promise<ConclusionPayload> {
+  const response = await fetch('/api/conclusions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      root_id: input.rootId,
+      authored: input.authored,
+      title: input.title ?? '',
+      node_id: input.nodeId ?? '',
+      author: input.author ?? '',
+      facts: input.facts ?? {},
+      incomplete: input.incomplete ?? [],
+      status: input.status ?? 'draft',
+      conclusion_id: input.conclusionId,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readDetail(response, '保存结论失败'));
+  }
+  return response.json();
+}
+
+/** 导出链接（直接给 `<a href>` 用；返回的是 Markdown 附件）。 */
+export function conclusionExportUrl(conclusionId: number): string {
+  return `/api/conclusions/${conclusionId}/export`;
 }
 
 /**

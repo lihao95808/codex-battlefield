@@ -739,6 +739,49 @@ export interface PreAuthorizationResponse {
   note: string;
 }
 
+/** 结论文档里由代码抽出的事实（P4-5）。 */
+export interface ConclusionFacts {
+  root_id?: string;
+  node_id?: string;
+  node_count?: number;
+  settled_count?: number;
+  unsettled_count?: number;
+  status_counts?: Record<string, number>;
+  timeline?: { at: string; type: string; message: string; node_id: string }[];
+  timeline_total?: number;
+  stuck_nodes?: { id: string; title: string; status: string; error: string; attempts: number }[];
+  open_obligations?: { id: string; type: string; node_id: string; severity: string }[];
+  cost?: { total_tokens: number; cost_by_currency?: Record<string, number> | null; cost_unlabeled?: number | null };
+}
+
+/** `GET /api/conclusions/draft` —— **没有落库**的草稿。 */
+export interface ConclusionDraft {
+  root_id: string;
+  node_id: string;
+  title: string;
+  facts: ConclusionFacts;
+  /** 这份草稿里**没能确定**的地方（空段不等于"没有"）。 */
+  incomplete: string[];
+  markdown: string;
+  note: string;
+}
+
+export interface ConclusionPayload {
+  id: number;
+  root_id: string;
+  node_id: string;
+  title: string;
+  /** `draft` = 事实已抽好等人补；`final` = 人已定稿（**不表示结论正确**）。 */
+  status: string;
+  author: string;
+  authored: string;
+  markdown: string;
+  facts: ConclusionFacts;
+  incomplete: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface CostProjection {
   available: boolean;
   /** 不可用时的原因（界面必须显示它，而不是显示 0）。 */

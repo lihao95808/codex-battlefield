@@ -1,6 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app import concurrency
 from app.models import TaskNode
@@ -246,8 +248,19 @@ def test_decision_counts_external_slots_as_agents() -> None:
     assert decision["active_agent_statuses"] == 1
 
 
-def test_orchestrator_delegates_agree_with_module() -> None:
-    """反漂移：orchestrator 的委托必须与模块函数给出同一答案。"""
+def test_orchestrator_delegates_agree_with_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """反漂移：orchestrator 的委托必须与模块函数给出同一答案。
+
+    ⚠️ 必须**冻住时钟**。`auto_concurrency_fuel_state` 里有 `minutes_to_deadline`
+    与 `deadline_elapsed` 两个**分钟级**的时钟量；两次调用之间正好跨过一分钟边界时，
+    两边给出的字典会不一样 —— 实测在整套跑时偶发红（单跑必绿，典型的假失败）。
+    这不是"忽略一下就好了"的 flake：它会让真正的委托漂移淹在噪声里。
+
+    冻时钟同时也让这条判据**更严**：两边看到的是同一时刻，差异只可能来自实现。
+    """
+    frozen = datetime(2026, 10, 16, 19, 30, tzinfo=timezone.utc)  # 本地 03:30，未过 20:00 截止
+    monkeypatch.setattr(concurrency, "utcnow", lambda: frozen)
+
     orchestrator = Orchestrator.__new__(Orchestrator)
 
     backlog_args = dict(lower=1, upper=4, queue_threshold=3, queued_work=6, active_frontier=8, active_agents=0)

@@ -4888,3 +4888,161 @@ select:focus {
   flex-direction: column;
   gap: 6px;
 }
+/* ---------- 结论文档（P4-5）----------
+   事实与人的判断在视觉上分开：截图时也要能看出哪句是代码抽的。 */
+.conclusion-panel {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #6b7a90;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.conclusion-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.cc-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.cc-count::before { content: '('; }
+.cc-count::after { content: ')'; }
+
+.cc-draft {
+  margin-top: 8px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e3e9f2;
+  border-radius: 6px;
+}
+
+/* "没有落库"要显眼 —— 否则用户以为已经归档了。 */
+.cc-draft-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7a5310;
+  background: #fdf6ec;
+  border: 1px solid #e8d3ab;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.cc-incomplete {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fdeeee;
+  border: 1px solid #e9c2c2;
+  border-radius: 5px;
+}
+
+.cc-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #822727;
+}
+
+.cc-incomplete ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 10px;
+  line-height: 1.8;
+  color: #822727;
+}
+
+.cc-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 6px;
+  border: 1px solid #cdd7e5;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.cc-preview {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.cc-preview > summary {
+  cursor: pointer;
+  color: #6b7a90;
+}
+
+.cc-markdown {
+  margin: 4px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.6;
+  background: #f7f9fc;
+  border: 1px solid #e3e9f2;
+  border-radius: 5px;
+  padding: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cc-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cc-row {
+  padding: 5px 7px;
+  border: 1px solid #e3e9f2;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.cc-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cc-title {
+  font-size: 11px;
+  color: #1f3a5f;
+  word-break: break-all;
+}
+
+.cc-status {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.cc-status-draft { background: #fdf6ec; color: #7a5310; border: 1px solid #e8d3ab; }
+.cc-status-final { background: #eef6f0; color: #2f5d4f; border: 1px solid #c6e0d2; }
+
+.cc-row-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #6b7a90;
+  word-break: break-all;
+}
+
+.cc-export {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #3f6ea8;
+}

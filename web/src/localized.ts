@@ -43,6 +43,7 @@ export const PENDING: string[] = [
   'CostPanel.tsx',
   'PolicyPanel.tsx',
   'PreAuthPanel.tsx',
+  'ConclusionPanel.tsx',
   'CrossProjectPanel.tsx',
   'StateAdminPanel.tsx',
   'SettingsPanel.tsx',

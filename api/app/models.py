@@ -250,3 +250,50 @@ class StewardAction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class IncidentConclusion(Base):
+    """一次事故/一段长跑的**结论文档**（P4-5）。`docs/incident-conclusions.md`。
+
+    ## 为什么需要它（而不是"翻事件表"）
+
+    事件表记的是**发生了什么**，它回答不了"**当时为什么这么决定**"。
+    而后者恰恰是复盘时唯一真正需要的东西 —— 事后看到一条 `cancel_node`，
+    光看事件永远不知道那是不是个合理决定。
+
+    所以结论是**人写的文档**（管家起草、你改），事实部分由代码从库里抽出来。
+
+    ## 为什么把"已知"与"未知"分开存
+
+    `facts_json` 里每段都可能是空的（读不到、或那类事件压根没发生过）。
+    **空段被读成"没有"正是最坏的一种误读**（"没有决策点" vs "读不到决策点"）。
+    所以 `incomplete_json` 单独列"这份草稿里哪些地方没能确定"，
+    而 `authored` 一段是**人写的**，与代码抽出来的事实严格分开。
+
+    ## 状态
+
+        draft（草稿：事实已抽好，等人补"当时为什么"） -> final（定稿）
+
+    `final` 只表示"人已经看过并定稿"，**不表示结论正确** —— 它是文档，不是判据。
+    """
+
+    __tablename__ = "incident_conclusions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    root_id: Mapped[str] = mapped_column(String(64), index=True)
+    # 可选：结论针对某个节点（单节点事故）而不是整棵树。
+    node_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    title: Mapped[str] = mapped_column(String(240), default="")
+    # draft | final
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    # 代码抽出来的事实（结构化，便于以后做统计）
+    facts_json: Mapped[str] = mapped_column(Text, default="{}")
+    # 这份草稿里**没能确定**的地方 —— 空段不等于"没有"
+    incomplete_json: Mapped[str] = mapped_column(Text, default="[]")
+    # 人写的"当时为什么这么决定"（Markdown）。**与事实严格分开。**
+    authored: Mapped[str] = mapped_column(Text, default="")
+    # 渲染好的完整文档（便于直接展示/导出，避免每次重算）
+    markdown: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
