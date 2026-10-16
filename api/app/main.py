@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from . import (
+    cross_project,
     diagnostics as diagnostics_mod,
     project_store,
     migration as migration_mod,
@@ -412,6 +413,20 @@ def state_overview() -> dict:
     旧 `<repo>/workspace/` 里还剩什么需要迁移。**不写任何文件。**
     """
     return state_admin.overview(orchestrator.settings)
+
+
+@app.get("/api/overview/cross-project")
+def cross_project_overview() -> dict:
+    """**跨工程总览**：每个已挂载工程的树状态、花费、未清阻断债（P3-4）。
+
+    与 `/api/state/overview` 的分工：那个是**磁盘**视角（状态落在哪、占多大，
+    用于迁移/重置），这个是**内容**视角（跑到什么程度、花了多少，用于决策）。
+
+    纯只读，而且刻意**不建库**：库不存在就是"还没跑过"，不给它造一个空库。
+    单个工程读不到不会让整个端点失败 —— 那会把"有一个工程坏了"变成
+    "总览坏了"，而用户需要的恰恰是"哪一个坏了"。
+    """
+    return cross_project.cross_project(orchestrator.settings)
 
 
 @app.post("/api/state/migrate")

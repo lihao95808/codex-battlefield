@@ -145,23 +145,34 @@ def test_rebuild_index_script_validates_the_asked_scope(monkeypatch: pytest.Monk
     assert json.loads(capsys.readouterr().out)["status"] == "settled"
 
 
-def test_rebuild_index_script_defaults_to_the_product_database() -> None:
+def test_rebuild_index_script_defaults_to_the_product_database(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """脚本的默认库必须**就是**产品的默认库，否则它会安静地去问一个空库。
 
     实测 2026-09-24：脚本默认写成 `workspace/codex_battlefield.sqlite3`，而 `app.config` 的默认是
     `workspace/battlefield.sqlite3` → 不带环境变量跑 `--check`，得到 `projected: 0 / in_sync: true`，
     读起来正是"索引干净、一条债都没有"。**唯一的写入口自己报了个假全绿**，方向正好反。
     断言比的是两边算出来的 URL，不是源码文本（改名了也照样盯得住）。
+
+    ⚠️ 两处隔离是**必须**的，缺一条这条用例就会在 `-n auto` 下随机红
+    （实测 2026-10-16：单跑必绿、整套必红，是最难查的那类假失败）：
+
+    1. **状态根指到空目录**。`prepare_imports()` 问的是 `get_settings().database_url`，
+       而它**回退读 `active.json`** —— 同一 worker 里别的用例（如 `test_state_admin.py`）
+       挂载过工程后会在状态根留下 `active.json`，于是脚本把状态根当成了当前工程，
+       算出 `projects/<key>/battlefield.sqlite3`，而 `WORKSPACE_DIR` 是"未绑定"的兜底路径。
+       指向空目录 → 读不到 `active.json` → 回到产品默认，这才是这条判据想测的东西。
+    2. **用 `monkeypatch` 而不是手工 `os.environ.pop`**：手工写法会把环境变量的改动
+       留给后续用例（这正是第 1 条那个 `active.json` 之外的另一半泄漏）。
     """
-    monkeypatch_env = os.environ.pop("CODEX_BATTLEFIELD_DATABASE_URL", None)
-    try:
-        script = _load("rebuild_index_db_default", ROOT / "scripts" / "rebuild_obligation_index.py")
-        script.prepare_imports()
-        script_url = os.environ["CODEX_BATTLEFIELD_DATABASE_URL"]
-    finally:
-        os.environ.pop("CODEX_BATTLEFIELD_DATABASE_URL", None)
-        if monkeypatch_env is not None:
-            os.environ["CODEX_BATTLEFIELD_DATABASE_URL"] = monkeypatch_env
+    monkeypatch.setenv("CODEX_BATTLEFIELD_STATE_HOME", str(tmp_path / "empty-state-home"))
+    monkeypatch.delenv("CODEX_BATTLEFIELD_DATABASE_URL", raising=False)
+    monkeypatch.delenv("CODEX_BATTLEFIELD_PROJECT_KEY", raising=False)
+
+    script = _load("rebuild_index_db_default", ROOT / "scripts" / "rebuild_obligation_index.py")
+    script.prepare_imports()
+    script_url = os.environ["CODEX_BATTLEFIELD_DATABASE_URL"]
 
     from app.config import WORKSPACE_DIR
 
