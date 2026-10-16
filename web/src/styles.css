@@ -4261,3 +4261,132 @@ select:focus {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* ---------- 语言开关（P2-6）----------
+   两个真实按钮，不是一个下拉框：在你读不懂的语言里打开下拉框会一脸茫然。
+   `aria-pressed` 让"当前是哪一种"对屏幕阅读器也成立。 */
+.lang-switch {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  align-self: flex-start;
+  padding: 2px;
+  background: #eef2f8;
+  border-radius: 999px;
+}
+
+.lang-switch button {
+  padding: 2px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #4a5768;
+  cursor: pointer;
+}
+
+.lang-switch button.active {
+  background: #fff;
+  color: #1f3a5f;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(31, 58, 95, 0.16);
+}
+
+/* ---------- 术语表（P2-6）----------
+   折叠式、默认收起：它是参考物，不是每次都要读的东西。
+   但标题上带条数，让"有 15 个词跟日常意思不一样"本身成为可见信号。 */
+.glossary {
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #7a6ea8;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.glossary > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.glossary-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7a90;
+}
+
+.glossary-count::before {
+  content: '(';
+}
+
+.glossary-count::after {
+  content: ')';
+}
+
+.glossary-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.glossary-term {
+  padding: 6px 8px;
+  border: 1px solid #e3e9f2;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.glossary-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.glossary-en {
+  font-size: 10px;
+  color: #6b7a90;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.glossary-meaning,
+.glossary-interop {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #4a5768;
+}
+
+/* "跟日常用法的差别"是这张表唯一不可省的一段 —— 视觉上也要跟定义分开。 */
+.glossary-interop {
+  color: #7a5310;
+  background: #fdf9f1;
+  border-left: 2px solid #e8d3ab;
+  padding: 4px 6px;
+  border-radius: 0 4px 4px 0;
+}
+
+.glossary-tag {
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 10px;
+  color: #8a7550;
+}
+
+.glossary-spec {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #6b7a90;
+  background: #f2f4f7;
+  border-radius: 3px;
+  padding: 0 4px;
+  word-break: break-all;
+}

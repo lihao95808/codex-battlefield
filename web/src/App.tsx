@@ -56,6 +56,8 @@ import {
 } from './api';
 import { layoutBattlefield } from './layout';
 import { ProjectOnboarding } from './ProjectOnboarding';
+import { GlossaryPanel } from './GlossaryPanel';
+import { LanguageSwitch } from './LanguageSwitch';
 import { RunInspector } from './RunInspector';
 import { SettingsPanel } from './SettingsPanel';
 import { StateAdminPanel } from './StateAdminPanel';
@@ -1135,6 +1137,7 @@ export function App() {
             <h1>L4 Navigator</h1>
             <p>AI L4 自动导航任务可视化</p>
           </div>
+          <LanguageSwitch />
         </div>
 
         <section className="panel">
@@ -1360,6 +1363,8 @@ export function App() {
         <ProjectOnboarding onBound={() => loadTree().catch(() => undefined)} />
 
         <StateAdminPanel />
+
+        <GlossaryPanel />
 
         <RunInspector taskId={selectedId} />
 
