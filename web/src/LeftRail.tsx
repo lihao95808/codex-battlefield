@@ -191,6 +191,13 @@ export function LeftRail({ view }: { view: View }) {
                 全部
               </button>
             </div>
+            {/* 长列表虚拟化：被窗口挡掉多少必须**说出来**（见 docs/frontend-split.md §5）。
+                不说的话，用户会以为树就这么多 —— 悄悄丢节点比慢更坏。 */}
+            {view.windowNotice && (
+              <p className="depth-note" data-testid="virtualization-notice">
+                画布渲染 {view.renderedTaskCount} 个节点。{view.windowNotice}
+              </p>
+            )}
           </section>
   
           <section className="stat-grid" aria-label="战场统计主项" data-testid="stat-grid-primary">

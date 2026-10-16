@@ -12,6 +12,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { layoutBattlefield } from './layout';
 import { statNumber } from './format';
 import { edgeStateStyles, liveNodeStatuses, nodeLodForZoom, type NodeLod, type TaskNodeData, asRecord, buildWaitingReports } from './taskView';
+import { windowNotice, windowTasks } from './virtualization';
 import type { BattlefieldTask, TaskStatus, TreeResponse } from './types';
 import { MarkerType, Position, type Edge, type Node, type Viewport } from '@xyflow/react';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -253,10 +254,26 @@ export function useBattlefieldDerived({
     return edgeIds;
   }, [tree]);
 
+  // 长列表虚拟化（P5-2 最后一项）：**布局与渲染**只用有界窗口。
+  //
+  // 为什么在布局之前切：真正的代价不是 DOM 数量，而是把节点交给 `@xyflow/react`
+  // 之前那一步 `layoutBattlefield(...)`（elkjs）要逐节点算坐标 —— 千节点时它是主线程
+  // 上的大头，而 ReactFlow 自己的 `onlyRenderVisibleElements` 管不到它。
+  //
+  // 为什么 `visibleNodeCount` 仍用**完整**的 `visibleTasks`：显示"可见节点"时不减，
+  // 旁边单独显示"本次渲染了多少"。把统计也改成窗口大小，就等于悄悄改掉了用户读到的数
+  // —— 那是"用显示数字掩盖省略"。
+  const taskWindow = useMemo(
+    () => windowTasks(visibleTasks, { selectedId }),
+    [selectedId, visibleTasks],
+  );
+  const renderedTasks = taskWindow.tasks;
+
   const edges = useMemo<Edge[]>(() => {
     if (!tree) return [];
-    const visibleIds = new Set(visibleTasks.map((task) => task.id));
-    const taskById = new Map(visibleTasks.map((task) => [task.id, task]));
+    // 边也跟着窗口走：否则会出现"两端节点没渲染、但线段还在"的悬空边。
+    const visibleIds = new Set(renderedTasks.map((task) => task.id));
+    const taskById = new Map(renderedTasks.map((task) => [task.id, task]));
     return tree.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => {
@@ -288,10 +305,10 @@ export function useBattlefieldDerived({
           zIndex: liveSpine ? 14 : selectedPath ? 12 : targetTask?.is_active_frontier ? 8 : 5,
         };
       });
-  }, [liveSpineEdgeIds, selectedId, tree, visibleTasks]);
+  }, [liveSpineEdgeIds, renderedTasks, selectedId, tree]);
 
   useEffect(() => {
-    const nextNodes: Node[] = visibleTasks.map((task) => ({
+    const nextNodes: Node[] = renderedTasks.map((task) => ({
       id: task.id,
       type: 'task',
       data: {
@@ -329,12 +346,12 @@ export function useBattlefieldDerived({
     expandedDoneArchiveParentIds,
     nodeLod,
     parentIds,
+    renderedTasks,
     selectedId,
     taskById,
     toggleDoneArchive,
     toggleNodeCollapse,
     visibleDepthLimit,
-    visibleTasks,
     waitingReports,
   ]);
 
@@ -352,6 +369,10 @@ export function useBattlefieldDerived({
     depthDisplayLabel,
     isHiddenByCollapse,
     visibleTasks,
+    // 虚拟化：界面用 `renderedTaskCount` + `windowNotice` 如实说明"挡掉了多少"。
+    renderedTaskCount: taskWindow.tasks.length,
+    windowNotice: windowNotice(taskWindow),
+    windowLimit: taskWindow.limit,
     toggleNodeCollapse,
     toggleDoneArchive,
     expandAll,

@@ -101,6 +101,19 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
     expect(disabledCount, '高风险动作在预授权面板里必须是禁用状态').toBeGreaterThan(0);
   });
 
+  test('长列表虚拟化：树小的时候不出声，画布照常渲染', async ({ page }) => {
+    await prepareConstitution(page, 'E2E：虚拟化在树不大时不该出声');
+    await page.getByRole('button', { name: '启动任务树' }).click();
+    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-busy', '0', { timeout: 60_000 });
+
+    // 模拟树只有几个节点（远小于窗口上限），所以**不该**出现"被挡住"的提示 ——
+    // 出现就说明判据把"没挡"也报成了"挡了"（那会让提示变成噪声，用户学会忽略它）。
+    await expect(page.getByTestId('virtualization-notice')).toHaveCount(0);
+    await expect(page.getByLabel('L4 自动导航画布').locator('.react-flow__node').first()).toBeVisible({
+      timeout: 60_000,
+    });
+  });
+
   test('导出诊断：拿到诊断包，且里面包含真实证据而不是空壳', async ({ page, request }) => {
     await prepareConstitution(page, 'E2E：导出诊断包里要有真实证据');
     await page.getByRole('button', { name: '启动任务树' }).click();
