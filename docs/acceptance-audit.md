@@ -2,11 +2,16 @@
 
 这份文件回答一个问题：**目标里那些交付物，哪些真的有可反驳的判据，哪些还缺条件。**
 
-它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q6 会检查
-（每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
-**本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
+它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q10 会检查
+（每条交付物都说了状态、声明的判据文件真的存在**且里面有断言**、未验项没被悄悄删掉、
+双仓差异仍是 7 个文件、**本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `0fd715d4d571ca9eeb611c16ec418d22641174ef`、内部仓 `2af08ae2fb723e09a1bd04d98c4f545360fe9813`。
+> **Q10 是 2026-10-18 才补上的**：在这之前，`P5-2`（前端体量/虚拟化）与 `P5-3`（端到端）
+> 指向的是**无关文件**（`test_provider_matrix.py` / `test_ci_workflow.py`），而 Q2 只查
+> "文件在不在" —— 于是"判据指着别的模块"也能绿。现在它们指向真正的前端判据，
+> 并且每个判据文件都必须真的有断言（变异：把 P5-2 指回 `docs/README.md` → Q10 红、Q2 仍绿）。
+
+审计时的两个远端 tip：公开仓 `8ad17a95f601ba77dc86d526bd9a852d027a9962`、内部仓 `e904771ad1f3eb074dd577ac9bf3a6fa72e09e80`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -23,7 +28,7 @@
 | P2-4 | 已落地 | `api/tests/test_diagnostics.py`（脱敏 + 非空壳） |
 | P2-5 | 已落地 | `api/tests/test_state_admin.py`（迁移先预演、重置要抄 key） |
 | P2-6 | 已落地 | `web/src/i18n.test.ts` + `i18n.detect.test.ts`（32 例，逐条变异过） |
-| P3-1 | 已落地 | `api/tests/` 的预算硬闸用例 + `test_settings_panel.py`（额度项） |
+| P3-1 | 部分落地 | `api/tests/test_budget.py`（16 例：时间窗守卫 / agent burst / 预警档）+ `test_settings_panel.py`（额度项）—— **没有** token 金额硬闸，见缺口清单 |
 | P3-2 | 已落地 | `api/tests/test_cost.py`（区间而不是单值；样本不足拒绝给数） |
 | P3-3 | 已落地 | `api/tests/test_cost.py`（三维归因；取不到模型名不造假桶） |
 | P3-4 | 已落地 | `api/tests/test_cross_project.py`（按币种分桶、读不到≠0） |
@@ -53,6 +58,7 @@
 
 | 交付物 | 缺什么 |
 |---|---|
+| P3-1 | **口径已纠正**：原写“token / 金额硬闸已落地”，核对代码后**不成立** —— `budget.py` 是**时间窗**守卫（`set_budget_guard(resume_after_seconds=…)` → 整树休眠到额度刷新），再加 agent burst 上限，**没有**“累计 token 达到上限就暂停”这道闸。已落地：① 时间窗守卫（`api/tests/test_budget.py` 16 例）；② burst 上限与预警档；③ 一次性放行（`clear_budget_guard` + 预授权，不改上限）。**未做**：树级累计 token / 金额硬闸 —— P6-4 的实测给了具体成本场景（一轮探针自己拆到 6 层、24.1M input），现在只能靠人事先设时间窗 / burst 上限，不能靠“这棵树已经花了多少”自动停下。 |
 | P3-6 | 后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 **1601–2403ms** 之间摆（四次实测 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；2026-10-18 那次 2403ms `meets_target=false`），原因是取树正好落在“外部进程扫描缓存已过期”上（那 ~0.7s 又回到请求路径）—— 一路是量出来的 —— 侧栏重活改成“树到位再挂”（4406→3033ms）、cProfile 定住第一次 `get_tree` 的 0.895s 是 **PowerShell/WMI 全表扫进程**（缓存 TTL 2 秒）→ 换 WQL 服务端过滤（0.895→0.672s）+ **启动预热 + 后台每 15 秒刷新缓存** → 页面取树 TTFB **1165→253–277ms**。稳定通过的是判据的三条钉子：棘轮 6000ms、TTFB<800ms、服务端 p50<650ms；“目标 2000ms”只是 `meets_target` 的观测量。**已修掉抖动源**（2026-10-18）：统计口径缓存 TTL **5 秒 → 20 秒**（`_codex_slots_active`），请求路径不再同步跑那次 ~0.7 秒的 WMI 扫描；调度决策仍用 0.5 秒窗口现场扫（`api/tests/test_external_scan_staleness.py` S1–S3，变异改回 5 秒 → S1 红）。改后两次复测：取树 **270–420ms**（原先会窜到 1385ms）、`cold` **1696 / 1236ms**（都达标）。**仍未验证**：慢机器/CI 上的首屏（CI 下跳过；2 vCPU runner 上千节点 >180s，量的是 runner 容量）。见 `docs/scale-baseline.md` §5 ⑨⑩⑪ |
 | P5-2 | 长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”不是一个稳定事实**（本机四次 cold 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；棘轮 6000ms 与 TTFB<800ms 稳定通过），判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外还多了一条回归钉子（页面取树 TTFB < 800ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过） |
 | P5-6 | **两个阶段都实测过了**：`api/tests/test_crash_injection.py` 在每个写入阶段硬杀一次进程，还原锚点仍可读；`api/tests/test_external_process_kill.py`（默认 skip，`CODEX_BATTLEFIELD_REAL_PROCESS_KILL=1` 才跑）对**真实** Codex 进程树（`cmd.exe → node → codex.exe`，实测 **7 个进程**）跑产品自己的 `_stop_external_codex_process_tree`：5 秒内 **0 个存活**、被杀的调用带失败返回（关掉重试后）。两次变异：换成 no-op → **红**（列出 7 个存活 pid）；去掉 `/T` → **仍绿**（该形状下父进程一死、`node` 读到 stdin EOF 自己退，所以 `/T` 不是必要条件）。**仍未验**：杀毒软件 / 受限权限环境里 `taskkill` 会不会被拦（本机没有那个环境）。详见 `docs/crash-injection.md` §7 |
@@ -64,8 +70,8 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`0fd715d4d571ca9eeb611c16ec418d22641174ef`（`origin/main`）
-* 内部仓：`2af08ae2fb723e09a1bd04d98c4f545360fe9813`（`internal/main`）
+* 公开仓：`8ad17a95f601ba77dc86d526bd9a852d027a9962`（`origin/main`）
+* 内部仓：`e904771ad1f3eb074dd577ac9bf3a6fa72e09e80`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。

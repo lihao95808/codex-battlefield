@@ -40,7 +40,8 @@ JUDGEMENTS: dict[str, str] = {
     "P2-4": "`api/tests/test_diagnostics.py`（脱敏 + 非空壳）",
     "P2-5": "`api/tests/test_state_admin.py`（迁移先预演、重置要抄 key）",
     "P2-6": "`web/src/i18n.test.ts` + `i18n.detect.test.ts`（32 例，逐条变异过）",
-    "P3-1": "`api/tests/` 的预算硬闸用例 + `test_settings_panel.py`（额度项）",
+    "P3-1": "`api/tests/test_budget.py`（16 例：时间窗守卫 / agent burst / 预警档）+ "
+    "`test_settings_panel.py`（额度项）—— **没有** token 金额硬闸，见缺口清单",
     "P3-2": "`api/tests/test_cost.py`（区间而不是单值；样本不足拒绝给数）",
     "P3-3": "`api/tests/test_cost.py`（三维归因；取不到模型名不造假桶）",
     "P3-4": "`api/tests/test_cross_project.py`（按币种分桶、读不到≠0）",
@@ -72,6 +73,13 @@ JUDGEMENTS: dict[str, str] = {
 
 #: 缺口 → 缺什么。带"未验"字样的条目必须有这里的一条说明（没有就是审计自己的缺口）。
 GAP_REASONS: dict[str, str] = {
+    "P3-1": "**口径已纠正**：原写“token / 金额硬闸已落地”，核对代码后**不成立** —— "
+    "`budget.py` 是**时间窗**守卫（`set_budget_guard(resume_after_seconds=…)` → 整树休眠到额度刷新），"
+    "再加 agent burst 上限，**没有**“累计 token 达到上限就暂停”这道闸。"
+    "已落地：① 时间窗守卫（`api/tests/test_budget.py` 16 例）；② burst 上限与预警档；"
+    "③ 一次性放行（`clear_budget_guard` + 预授权，不改上限）。"
+    "**未做**：树级累计 token / 金额硬闸 —— P6-4 的实测给了具体成本场景（一轮探针自己拆到 6 层、"
+    "24.1M input），现在只能靠人事先设时间窗 / burst 上限，不能靠“这棵树已经花了多少”自动停下。",
     "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 "
     "**1601–2403ms** 之间摆（四次实测 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；"
     "2026-10-18 那次 2403ms `meets_target=false`），"
@@ -173,9 +181,14 @@ def render() -> str:
         "",
         "这份文件回答一个问题：**目标里那些交付物，哪些真的有可反驳的判据，哪些还缺条件。**",
         "",
-        "它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q6 会检查",
-        "（每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、",
-        "**本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。",
+        "它本身也受判据约束：`api/tests/test_acceptance_audit.py` 的 Q1–Q10 会检查",
+        "（每条交付物都说了状态、声明的判据文件真的存在**且里面有断言**、未验项没被悄悄删掉、",
+        "双仓差异仍是 7 个文件、**本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。",
+        "",
+        "> **Q10 是 2026-10-18 才补上的**：在这之前，`P5-2`（前端体量/虚拟化）与 `P5-3`（端到端）",
+        "> 指向的是**无关文件**（`test_provider_matrix.py` / `test_ci_workflow.py`），而 Q2 只查",
+        "> \"文件在不在\" —— 于是\"判据指着别的模块\"也能绿。现在它们指向真正的前端判据，",
+        "> 并且每个判据文件都必须真的有断言（变异：把 P5-2 指回 `docs/README.md` → Q10 红、Q2 仍绿）。",
         "",
         f"审计时的两个远端 tip：公开仓 `{public_tip}`、内部仓 `{internal_tip}`。",
         "（本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）",

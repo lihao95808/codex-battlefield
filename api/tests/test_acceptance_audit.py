@@ -44,14 +44,20 @@ TARGET_STAGES = ("P2", "P3", "P4", "P5", "P6")
 #: 只写"已落地"而不说代价，等于把未验的部分藏起来。
 STATUS_MARKERS = ("已落地", "部分落地", "未做", "未验证", "未验")
 
-#: 声明"已落地/部分落地"的行 → 必须在仓库里能找到的判据文件（相对 `api/tests/`）。
+#: 声明"已落地/部分落地"的行 → 必须在仓库里能找到的判据文件。
+#: **裸文件名**指 `api/tests/`，带 `/` 的按仓库根解析（前端判据就是这样写的）。
 #: 这条表是**人工维护**的：它是"声明"与"证据"之间的那根线，不能让脚本自己猜。
-#: 前端侧的判据在 `web/src/*.test.ts`，由 `test_q4_frontend_side_judgements_exist_in_the_web_tree` 单独查。
+#:
+#: ⚠️ 2026-10-18 修掉一处**假的对应**：`P5-2`（前端体量/虚拟化）与 `P5-3`（端到端）原来分别
+#: 指向 `test_provider_matrix.py` / `test_ci_workflow.py` —— Q2 只查"文件在不在"，于是**判据
+#: 指着无关的文件也能绿**。现在它们指向真正的前端判据，并由 Q10 额外要求"文件里得有断言"。
 JUDGEMENT_FILES: dict[str, tuple[str, ...]] = {
     "P2-2": ("test_settings_panel.py",),
     "P2-3": ("test_runtime_logs.py",),
     "P2-4": ("test_diagnostics.py",),
     "P2-5": ("test_state_admin.py",),
+    # P3-1 是"部分落地"（时间窗守卫 + burst 上限；token/金额硬闸未做），判据仍在同一条链上。
+    "P3-1": ("test_budget.py",),
     "P3-2": ("test_cost.py",),
     "P3-3": ("test_cost.py",),
     "P3-4": ("test_cross_project.py",),
@@ -63,8 +69,8 @@ JUDGEMENT_FILES: dict[str, tuple[str, ...]] = {
     "P4-4": ("test_action_risk.py",),
     "P4-5": ("test_conclusions.py",),
     "P5-1": ("test_metrics.py",),
-    "P5-2": ("test_provider_matrix.py",),  # 前端体量/虚拟化的判据在 web/src/*.test.ts，见 Q4
-    "P5-3": ("test_ci_workflow.py",),
+    "P5-2": ("web/src/virtualization.test.ts", "web/src/fileSize.test.ts"),
+    "P5-3": ("web/e2e/l4-flow.spec.ts",),
     "P5-4": ("test_retention.py",),
     "P5-5": ("test_trace_correlation.py",),
     "P5-6": ("test_crash_injection.py",),
@@ -95,6 +101,12 @@ def target_rows() -> list[tuple[str, str]]:
     return [(item, line) for item, line in roadmap_rows() if item[:2] in TARGET_STAGES]
 
 
+def judgement_path(name: str) -> Path:
+    """判据文件的位置：裸文件名指 `api/tests/`，带 `/` 的按仓库根解析。"""
+
+    return REPO / name if "/" in name else TESTS / name
+
+
 # --- Q1 每个交付物都有状态 ---------------------------------------------------
 
 
@@ -123,7 +135,8 @@ def test_q2_claimed_deliverables_have_judgement_files(item: str, files: tuple[st
     assert row is not None, f"ROADMAP 里没有 {item}"
     assert any(marker in row for marker in ("已落地", "部分落地")), f"{item} 没有声明落地，不该在这张表里"
     for name in files:
-        assert (TESTS / name).is_file(), f"{item} 声明的判据文件不存在：api/tests/{name}"
+        path = judgement_path(name)
+        assert path.is_file(), f"{item} 声明的判据文件不存在：{path.relative_to(REPO).as_posix()}"
 
 
 def test_q2_no_orphan_entries_in_the_table():
@@ -369,4 +382,31 @@ def test_q7_check_passes_without_the_internal_remote(tmp_path):
     assert proc.returncode == 0, (
         "在没有 internal 引用的环境里审计被判成'过期' —— 干净 clone（CI）上会红。"
         f"输出：{proc.stdout.strip()}"
+    )
+
+
+# --- Q10 判据文件里必须真的有断言 ------------------------------------------
+#
+# Q2 只证明"文件存在"。一个空文件、或者一个只放了文档字符串的文件，同样能让 Q2 绿 ——
+# 而它一条断言都没有。Q10 补这一半：文件里必须能找到断言形状的东西。
+#
+# 变异（证明它会红）：把 `P5-2` 的判据临时指向 `docs/README.md`（存在、但里面没有断言）
+# → Q10 立刻失败，Q2 仍然绿 —— 这正是修之前那张表的形态。
+
+#: 各种判据文件里"断言"的样子。Python 用 `def test_`/`assert`，前端用 `test(`/`it(`/`expect(`。
+ASSERTION_MARKERS = ("def test_", "expect(", "assert ", "test(", "it(")
+
+
+@pytest.mark.parametrize(("item", "files"), sorted(JUDGEMENT_FILES.items()))
+def test_q10_judgement_files_really_assert_something(item: str, files: tuple[str, ...]):
+    empty: list[str] = []
+    for name in files:
+        path = judgement_path(name)
+        assert path.is_file(), f"{item} 声明的判据文件不存在：{name}"
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not any(marker in text for marker in ASSERTION_MARKERS):
+            empty.append(name)
+    assert empty == [], (
+        f"{item} 声明的判据文件里找不到任何断言（{empty}）—— "
+        "一个只有文档字符串/说明的文件不能当判据；它会让\"已落地\"这句话凭空成立"
     )
