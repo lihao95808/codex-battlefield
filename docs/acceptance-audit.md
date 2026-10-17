@@ -11,7 +11,7 @@
 > "文件在不在" —— 于是"判据指着别的模块"也能绿。现在它们指向真正的前端判据，
 > 并且每个判据文件都必须真的有断言（变异：把 P5-2 指回 `docs/README.md` → Q10 红、Q2 仍绿）。
 
-审计时的两个远端 tip：公开仓 `8114fee3f50ac9606ef8d863306bb8e1f7aa2637`、内部仓 `e42104f82fede35edff702b917be43c00c1a75cf`。
+审计时的两个远端 tip：公开仓 `98b408d45e5690a24c7dbe0bb9de9e2e012c91e8`、内部仓 `ea0cce0c04731defa0c94d1b478a898b384a2213`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -65,13 +65,13 @@
 | P6-1 | **运行期已验证**（2026-10-18，WSL Ubuntu 里的 Docker 29.1.3）：`scripts/verify_container_up.py` 五条判据全绿 —— compose 起得来、`/api/health` 200、`GET /` 200 且含 `id="root"`、`/assets/*.js` 200 且不是 `text/html`、容器内 `id -u` = 10001。第一次真跑抓到五个缺陷（pnpm 允许列表键名不存在、该文件没进构建上下文、pnpm 12 vs CI 的 10、editable 安装早于源码 COPY、非 root 下 mkdir 老工作区导致 503），修法与证据在 `docs/container.md`，判据 K9–K12。**仍未验**：镜像推送/拉取、多架构、macOS 的 Docker Desktop。 |
 | P6-2 | **Linux 运行期已验证**（2026-10-18，WSL Ubuntu 24.04 / Python 3.12）：后端整套 **1729 通过 / 33 跳过 / 0 失败（1 分 43 秒）**；清零过程中抓到两处真缺陷（监督器的 killpg 因缺 start_new_session 而杀掉调用方；迁移重写 worktree 路径写死反斜杠）。口径与逐类处理见 `docs/cross-platform.md` §7。**仍未验证**：macOS（本机没有）、真 Linux CI （`ubuntu-latest`，等 GitHub 账单）。 |
 | P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文`The job has exceeded the maximum execution time of 30m0s`，把预算提到 **45 分钟**再跑（run 38973770051 / commit 8d48868）—— Windows 侧 **16.4 分钟 success**（连续第三次全绿），ubuntu 侧 **>44.9 分钟仍没跑完**。**已做结构性处置**：`verify_all --group {python,web}` 把同一套门禁拆成两个并行作业（W13 盯着“并集等于全部步骤、两组不重叠、两个作业各自覆盖双平台”），顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
-| P6-4 | **递归链路已实测通过**（2026-10-18，`scripts/real_recursive_probe.py`，`deepseek-flash`，修完后**十轮全绿**）：十轮共 106 次真实运行（每轮 8–31 次，含每轮的真实 acceptance）全 `exit_code=0`，`root_status=done`（深度 1 七轮 / 深度 2 两轮 / **深度 6** 一轮）、`acceptance_run_count>=1`（**真实**运行，`synthetic_run_count=0`）、`debug_paths_ok=true`、`probe_files` 非空，墙钟 9–16 分钟。修之前两轮都不可用：一轮被并发跑的另一个真实探针抢走 Codex 槽位（事件 `scheduler.external_codex_slots_full`，`run_count=0`），一轮子 planner 输出多一个 `}`（`Extra data … char 1042`）被判 `blocked`、把树带到 `waiting_children`；已加**结构漂移自纠重试**（`retry.parse_failure_feedback` + `api/tests/test_parse_failure_retry.py` P1–P4，去掉修复红 3 条）。**仍未覆盖**：长跑 / 并发 / “树该拆多深”的成本上限（一次自己拆到 6 层、31 次运行、24.1M input）；成功率只敢说“修后 10/10”（n=10）；费用金额仍 `null`（端点不回传，不推算）。详见 `docs/weak-model-usability.md` §8 |
+| P6-4 | **递归链路已实测通过**（2026-10-18，`scripts/real_recursive_probe.py`，`deepseek-flash`，修完后**十一轮全绿**）：十一轮共 114 次真实运行（每轮 8–33 次，含每轮的真实 acceptance）全 `exit_code=0`，`root_status=done`（深度 1 七轮 / 2 两轮 / 3 一轮 / **6** 一轮）、`acceptance_run_count>=1`（**真实**运行，`synthetic_run_count=0`）、`debug_paths_ok=true`、`probe_files` 非空，墙钟 9–16 分钟。修之前两轮都不可用：一轮被并发跑的另一个真实探针抢走 Codex 槽位（事件 `scheduler.external_codex_slots_full`，`run_count=0`），一轮子 planner 输出多一个 `}`（`Extra data … char 1042`）被判 `blocked`、把树带到 `waiting_children`；已加**结构漂移自纠重试**（`retry.parse_failure_feedback` + `api/tests/test_parse_failure_retry.py` P1–P4，去掉修复红 3 条）。**仍未覆盖**：长跑 / 并发 / “树该拆多深”的成本上限（一次自己拆到 6 层、31 次运行、24.1M input）；成功率只敢说“修后 11/11”（n=11）；费用金额仍 `null`（端点不回传，不推算）。详见 `docs/weak-model-usability.md` §8 |
 | P6-5 | **真实端点可达性已实测**（2026-10-18，`docs/provider-matrix.md` §4.3）：正样本（本机 `127.0.0.1:15721` 的 OpenAI 兼容代理，不带 key）→ `ok=true` / `exit_code=0` / `decision=execute` / `300%` / 约 15 秒；负样本（`base_url` 指向无监听端口）→ `ok=false` / `exit_code=124` / `hard timeout after 60s`（codex 会退避重试，所以“不通”表现为慢失败）。**鉴权那一半也验了**（`docs/provider-matrix.md` §4.4）：假网关强制 `Authorization`，F5（错 key）→ 真实调用 `exit_code != 0` 且日志里有 401；F6（对 key）→ `exit_code == 0`；变异把校验改成 `return False` → F5 红。**仍未验**：厂商云端端点本身与其特有鉴权细节。端点契约（SSE 流式 + `response.output_item.done`）此前已用本机假网关离线实测（F1–F4） |
 
 ## 3. 双仓状态
 
-* 公开仓：`8114fee3f50ac9606ef8d863306bb8e1f7aa2637`（`origin/main`）
-* 内部仓：`e42104f82fede35edff702b917be43c00c1a75cf`（`internal/main`）
+* 公开仓：`98b408d45e5690a24c7dbe0bb9de9e2e012c91e8`（`origin/main`）
+* 内部仓：`ea0cce0c04731defa0c94d1b478a898b384a2213`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。
@@ -88,7 +88,7 @@
 CI 那条**有了新证据**：拆组后 Windows 两个作业全绿、**Linux 前端侧第一次全绿**
 （`verify-web (ubuntu)` 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”；
 而且账号侧被账单挡住（2026-10-18 00:41 / 01:37 / 02:08 / 03:17 四次运行都是同一条注解），**Linux 侧完整记录仍拿不到**。
-弱模型那条**补到了递归链路**：10 轮共 106 次真实运行全绿（树最深拆到 6 层 31 次运行）、每轮都有真 acceptance，并拿到并修掉了“结构漂移”这个失败模式；
+弱模型那条**补到了递归链路**：11 轮共 114 次真实运行全绿（树最深拆到 6 层 31 次运行）、每轮都有真 acceptance，并拿到并修掉了“结构漂移”这个失败模式；
 provider 矩阵那条**补到了真实端点可达性**（正/负样本）与**鉴权的失败方向**（错 key → 401 可见、对 key → 成功，`docs/provider-matrix.md` §4.3/§4.4），
 仍然没验的只有“某家厂商的云端端点本身”。
 

@@ -128,14 +128,14 @@ GAP_REASONS: dict[str, str] = {
     "顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。"
     "**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。"
     "另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了",
-    "P6-4": "**递归链路已实测通过**（2026-10-18，`scripts/real_recursive_probe.py`，`deepseek-flash`，修完后**十轮全绿**）："
-    "十轮共 106 次真实运行（每轮 8–31 次，含每轮的真实 acceptance）全 `exit_code=0`，"
-    "`root_status=done`（深度 1 七轮 / 深度 2 两轮 / **深度 6** 一轮）、`acceptance_run_count>=1`（**真实**运行，`synthetic_run_count=0`）、"
+    "P6-4": "**递归链路已实测通过**（2026-10-18，`scripts/real_recursive_probe.py`，`deepseek-flash`，修完后**十一轮全绿**）："
+    "十一轮共 114 次真实运行（每轮 8–33 次，含每轮的真实 acceptance）全 `exit_code=0`，"
+    "`root_status=done`（深度 1 七轮 / 2 两轮 / 3 一轮 / **6** 一轮）、`acceptance_run_count>=1`（**真实**运行，`synthetic_run_count=0`）、"
     "`debug_paths_ok=true`、`probe_files` 非空，墙钟 9–16 分钟。修之前两轮都不可用：一轮被并发跑的另一个真实"
     "探针抢走 Codex 槽位（事件 `scheduler.external_codex_slots_full`，`run_count=0`），一轮子 planner 输出多一个 "
     "`}`（`Extra data … char 1042`）被判 `blocked`、把树带到 `waiting_children`；已加**结构漂移自纠重试**"
     "（`retry.parse_failure_feedback` + `api/tests/test_parse_failure_retry.py` P1–P4，去掉修复红 3 条）。"
-    "**仍未覆盖**：长跑 / 并发 / “树该拆多深”的成本上限（一次自己拆到 6 层、31 次运行、24.1M input）；成功率只敢说“修后 10/10”（n=10）；"
+    "**仍未覆盖**：长跑 / 并发 / “树该拆多深”的成本上限（一次自己拆到 6 层、31 次运行、24.1M input）；成功率只敢说“修后 11/11”（n=11）；"
     "费用金额仍 `null`（端点不回传，不推算）。详见 `docs/weak-model-usability.md` §8",
     "P6-5": "**真实端点可达性已实测**（2026-10-18，`docs/provider-matrix.md` §4.3）：正样本"
     "（本机 `127.0.0.1:15721` 的 OpenAI 兼容代理，不带 key）→ `ok=true` / `exit_code=0` / "
@@ -251,7 +251,7 @@ def render() -> str:
         "CI 那条**有了新证据**：拆组后 Windows 两个作业全绿、**Linux 前端侧第一次全绿**",
         "（`verify-web (ubuntu)` 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”；",
         "而且账号侧被账单挡住（2026-10-18 00:41 / 01:37 / 02:08 / 03:17 四次运行都是同一条注解），**Linux 侧完整记录仍拿不到**。",
-        "弱模型那条**补到了递归链路**：10 轮共 106 次真实运行全绿（树最深拆到 6 层 31 次运行）、"
+        "弱模型那条**补到了递归链路**：11 轮共 114 次真实运行全绿（树最深拆到 6 层 31 次运行）、"
         "每轮都有真 acceptance，并拿到并修掉了“结构漂移”这个失败模式；",
         "provider 矩阵那条**补到了真实端点可达性**（正/负样本）与**鉴权的失败方向**"
         "（错 key → 401 可见、对 key → 成功，`docs/provider-matrix.md` §4.3/§4.4），",

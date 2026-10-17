@@ -128,16 +128,26 @@ async def run_probe(args: argparse.Namespace) -> int:
         "probe_dir": str(probe_dir),
     }
     try:
-        constitution_id = await orchestrator.draft_constitution(goal, target_path=str(target_repo), runner_mode=args.constitution_runner)
-        orchestrator.lock_constitution(constitution_id)
-        root_id = await orchestrator.start_project(
-            goal,
-            target_path=str(target_repo),
-            runner_mode="real",
-            constitution_id=constitution_id,
-            auto_run=False,
+        # ⚠️ 起步阶段也要有上限（2026-10-18 实测：第 12 轮在 start_project 里挂了 **2 小时**，
+        # CPU 接近 0、没有子进程、DB 都没建出来 —— 没有超时的话它只会一直挂着，
+        # 而"挂住"比"失败"难查得多）。这里给起步三步各自一个明确上限。
+        startup_budget = max(120, args.timeout)
+        constitution_id = await asyncio.wait_for(
+            orchestrator.draft_constitution(goal, target_path=str(target_repo), runner_mode=args.constitution_runner),
+            timeout=startup_budget,
         )
-        await orchestrator.run_tree(root_id, runner_mode="real")
+        orchestrator.lock_constitution(constitution_id)
+        root_id = await asyncio.wait_for(
+            orchestrator.start_project(
+                goal,
+                target_path=str(target_repo),
+                runner_mode="real",
+                constitution_id=constitution_id,
+                auto_run=False,
+            ),
+            timeout=startup_budget,
+        )
+        await asyncio.wait_for(orchestrator.run_tree(root_id, runner_mode="real"), timeout=args.tree_timeout)
 
         with SessionLocal() as db:
             root = db.get(TaskNode, root_id)
@@ -204,6 +214,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="", help="真实 Codex CLI 使用的模型；默认留空，使用 Codex CLI 普通默认档。")
     parser.add_argument("--reasoning-effort", default="", help="真实 Codex CLI 推理强度；默认留空，使用 Codex CLI 普通默认档。")
     parser.add_argument("--timeout", type=int, default=300, help="单次 Codex 调用超时时间，单位秒。")
+    parser.add_argument(
+        "--tree-timeout",
+        type=int,
+        default=5400,
+        help="整棵树的总上限（秒）；默认 90 分钟，防止『挂住』被当成『在跑』。",
+    )
     parser.add_argument(
         "--constitution-runner",
         choices=["mock", "real"],

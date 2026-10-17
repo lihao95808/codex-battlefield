@@ -313,6 +313,15 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
   （"那条用例睡了 30 秒却没被判超时"）—— 也就是说，"下次会点名"这句话不再只是打算。
 
   ⚠️ 两个后来才查清的细节（别再当成"日志丢了"的 bug）：
+  * **最可能的原因（2026-10-18 在 WSL Ubuntu 上复现）**：`scripts/bench_supervise.py` 在 POSIX 上
+    用 `killpg(os.getpgid(child), SIGKILL)`，但子进程没有 `start_new_session` —— `getpgid` 拿到的是
+    **调用方那一组**，于是「杀掉卡住的子进程」把 pytest 自己 SIGKILL 了。本机直接跑时症状是
+    **日志停在 `test_supervisor_kills_a_stalled_child_and_writes_a_note`、没有 traceback**；
+    而 CI 用 `-n auto`：xdist 的 worker 被 SIGKILL 之后，controller 会**一直等它** ——
+    表现出来的正是「45 分钟没跑完」。修掉之后本机 Linux 整套 **1 分 43 秒**跑完
+    （1729 通过 / 33 跳过 / 0 失败）。这条仍要等 CI 真跑一次才能坐实，
+    但它现在是**唯一同时吻合两个症状**的解释（「跑不完」与「没有日志」）。
+
 
   * 那次 ubuntu 作业的结论是 **`cancelled`**（55 分钟时被下一次推送的
     `concurrency: cancel-in-progress` 掐掉），**不是** `timed_out`；
