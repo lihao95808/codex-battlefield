@@ -56,6 +56,7 @@ JUDGEMENT_FILES: dict[str, tuple[str, ...]] = {
     "P2-3": ("test_runtime_logs.py",),
     "P2-4": ("test_diagnostics.py",),
     "P2-5": ("test_state_admin.py",),
+    "P2-6": ("web/src/i18n.test.ts", "web/src/i18n.detect.test.ts"),
     # P3-1 是"部分落地"（时间窗守卫 + burst 上限；token/金额硬闸未做），判据仍在同一条链上。
     "P3-1": ("test_budget.py", "test_budget_ceiling.py"),
     "P3-2": ("test_cost.py",),
@@ -208,8 +209,16 @@ def test_q4_frontend_side_judgements_exist_in_the_web_tree():
     """前端那部分判据在 `web/src/*.test.ts`（vitest），不在 api/tests —— 单独查一次。"""
 
     web_src = REPO / "web" / "src"
+    empty: list[str] = []
     for name in ("fileSize.test.ts", "virtualization.test.ts", "i18n.test.ts", "polling.test.ts"):
-        assert (web_src / name).is_file(), f"前端判据文件不存在：web/src/{name}"
+        path = web_src / name
+        assert path.is_file(), f"前端判据文件不存在：web/src/{name}"
+        # 存在还不够：一个空文件、或者只有注释的文件同样能让"存在"成立。
+        # 这与 Q10（后端判据必须真的有断言）是同一条规矩的前端版本。
+        text = path.read_text(encoding="utf-8")
+        if not ("expect(" in text and ("test(" in text or "it(" in text)):
+            empty.append(name)
+    assert empty == [], f"这些前端判据文件里找不到断言：{empty}"
 
 
 def test_q4_e2e_spec_exists_and_the_workflow_runs_it():

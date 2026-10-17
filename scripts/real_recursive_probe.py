@@ -132,12 +132,14 @@ async def run_probe(args: argparse.Namespace) -> int:
         # CPU 接近 0、没有子进程、DB 都没建出来 —— 没有超时的话它只会一直挂着，
         # 而"挂住"比"失败"难查得多）。这里给起步三步各自一个明确上限。
         startup_budget = max(120, args.timeout)
-        constitution_id = await asyncio.wait_for(
+        constitution_id = await _with_timeout(
+            "起草宪法",
             orchestrator.draft_constitution(goal, target_path=str(target_repo), runner_mode=args.constitution_runner),
-            timeout=startup_budget,
+            startup_budget,
         )
         orchestrator.lock_constitution(constitution_id)
-        root_id = await asyncio.wait_for(
+        root_id = await _with_timeout(
+            "start_project（建 worktree / 注册工程）",
             orchestrator.start_project(
                 goal,
                 target_path=str(target_repo),
@@ -145,9 +147,9 @@ async def run_probe(args: argparse.Namespace) -> int:
                 constitution_id=constitution_id,
                 auto_run=False,
             ),
-            timeout=startup_budget,
+            startup_budget,
         )
-        await asyncio.wait_for(orchestrator.run_tree(root_id, runner_mode="real"), timeout=args.tree_timeout)
+        await _with_timeout("run_tree（整棵树）", orchestrator.run_tree(root_id, runner_mode="real"), args.tree_timeout)
 
         with SessionLocal() as db:
             root = db.get(TaskNode, root_id)
@@ -206,6 +208,20 @@ async def run_probe(args: argparse.Namespace) -> int:
     (probe_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
     return 0 if summary["ok"] else 1
+
+
+async def _with_timeout(label: str, awaitable, seconds: float):
+    """等一个协程，超时就把**是哪一步**写进异常里。
+
+    为什么不能直接用 `asyncio.wait_for`：它抛的是**光秃秃**的 `TimeoutError()`，
+    summary 里只剩 `"error": "TimeoutError()"` —— 读的人不知道是哪一步卡了。
+    （2026-10-18 实测：第 12 轮在起步阶段挂了 2 小时，加了超时之后仍需知道"挂在哪"。）
+    """
+
+    try:
+        return await asyncio.wait_for(awaitable, timeout=seconds)
+    except TimeoutError:
+        raise RuntimeError(f"{label} 超时（>{seconds:g}s）：这一步没有在预算内返回，说明它卡住了") from None
 
 
 def parse_args() -> argparse.Namespace:
