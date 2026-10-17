@@ -307,6 +307,10 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
   所以"哪条卡住"问不出来。处置：给每条用例装上上限（`pytest-timeout`，`--timeout=120`，
   判据 `test_repo_gates.py::test_pytest_has_a_per_test_timeout` 钉住它），
   下一次 Linux 运行里卡住的那条会**带着名字失败**。
+  **这条机制现在自己有判据了**（`test_repo_gates.py::test_the_timeout_actually_names_the_stuck_test`）：
+  它真的起一个嵌套 pytest 跑一个睡 30 秒的用例、`--timeout=2`，断言失败输出里同时有
+  **用例名**与 **Timeout 字样**。变异（把嵌套那次的 `--timeout` 去掉）→ 那条判据红
+  （"那条用例睡了 30 秒却没被判超时"）—— 也就是说，"下次会点名"这句话不再只是打算。
 
   ⚠️ 两个后来才查清的细节（别再当成"日志丢了"的 bug）：
 

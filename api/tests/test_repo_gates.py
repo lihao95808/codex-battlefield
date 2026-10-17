@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import subprocess
 import sys
 from typing import Any
 
@@ -158,6 +159,52 @@ def test_pytest_has_a_per_test_timeout() -> None:
     assert "--timeout=" in addopts, f"pytest 的 addopts 里没有 --timeout：{addopts!r}"
     dev = " ".join(config["project"]["optional-dependencies"]["dev"])
     assert "pytest-timeout" in dev, "dev 依赖里没有 pytest-timeout"
+
+
+def test_the_timeout_actually_names_the_stuck_test(tmp_path: pathlib.Path) -> None:
+    """`--timeout` 不只要能配，还要**真的在卡住时说出是哪一条**。
+
+    这条是上面那条的续集，也是它的反面：配置里写 `--timeout=120` 很容易，
+    难的是 Linux 上那 45 分钟没跑完的作业能变成"红、且点名"。
+    所以这里**真的起一个嵌套 pytest**，让它跑一个故意睡 30 秒的用例、`--timeout=2`：
+    断言输出里同时出现**用例名**和 **Timeout 字样**。
+
+    为什么要真跑：pytest-timeout 的这个行为依赖插件安装与超时方式（`signal` / `thread`），
+    只看配置是证明不了"它会在失败信息里点名"的 —— 而这正是我们需要的那个性质。
+    """
+
+    victim = tmp_path / "test_sleepy.py"
+    victim.write_text(
+        "import time\n\n\ndef test_this_one_hangs_forever():\n    time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(victim),
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--timeout=2",
+            "--timeout-method=thread",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert result.returncode != 0, "那条用例睡了 30 秒却没被判超时 —— 判据本身失效了"
+    assert "test_this_one_hangs_forever" in combined, (
+        "超时失败里没有点名是哪一条用例 —— 那「Linux 上哪条卡住」这个问题仍然问不出来。"
+        f"\n--- pytest 输出 ---\n{combined[-2000:]}"
+    )
+    assert "timeout" in combined.lower(), combined[-2000:]
+    assert "test_sleepy.py" in combined, combined[-2000:]
 
 
 def test_rebuild_index_script_rejects_wrong_scope_with_a_message(

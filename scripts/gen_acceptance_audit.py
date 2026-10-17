@@ -75,18 +75,14 @@ JUDGEMENTS: dict[str, str] = {
 
 #: 缺口 → 缺什么。带"未验"字样的条目必须有这里的一条说明（没有就是审计自己的缺口）。
 GAP_REASONS: dict[str, str] = {
-    "P3-1": "**口径已纠正**：原写“token / 金额硬闸已落地”，核对代码后**不成立** —— "
-    "`budget.py` 是**时间窗**守卫（`set_budget_guard(resume_after_seconds=…)` → 整树休眠到额度刷新），"
-    "再加 agent burst 上限，**没有**“累计 token 达到上限就暂停”这道闸。"
-    "已落地：① 时间窗守卫（`api/tests/test_budget.py` 16 例）；② burst 上限与预警档；"
-    "③ 一次性放行（`clear_budget_guard` + 预授权，不改上限）。"
-    "**树级 token 上限已落地**（2026-10-18，`budget_token_ceiling`，默认 0=关）：每次起 agent 前用 "
-    "`cost.cost_report` 统计这棵树的累计 token，超上限就整树休眠 + 写 `budget.token_ceiling` 事件；"
-    "判据 `api/tests/test_budget_ceiling.py` B1–B6（B4 删钩子就红）。"
-    "**金额闸也已落地**（`budget_cost_ceiling` + `budget_cost_currency`，默认 0=关）："
-    "读不到金额 / 没配币种 / 币种不匹配 → **不暂停**但写事件说明原因；真超了才休眠。"
-    "判据 `api/tests/test_budget_cost_ceiling.py` C1–C7（C7 接线判据）。"
-    "**仍未做**：跨币种换算（需要汇率来源与口径）。",
+    "P3-1": "**四道闸的现状（2026-10-18 两次纠正之后）**：① **时间窗**守卫（额度耗尽 → 整树休眠到刷新，"
+    "`api/tests/test_budget.py` 16 例）；② **agent burst**（每窗口允许起几个 agent，同文件）；"
+    "③ **树级 token 上限**（`budget_token_ceiling`，默认关，`test_budget_ceiling.py` B1–B6，B4 是接线判据）；"
+    "④ **树级金额上限**（`budget_cost_ceiling` + `budget_cost_currency`，默认关，"
+    "`test_budget_cost_ceiling.py` C1–C7；读不到金额 / 币种不匹配时**不误报**，而是写事件说明原因）。"
+    "**仍未做**：跨币种换算（需要汇率来源与口径，属新依赖，不偷偷加）。"
+    "历史上这里一度把“token / 金额硬闸”写成已落地而代码里只有时间窗守卫 —— 那次纠正的记录见 "
+    "`docs/cost-accounting.md` §2。",
     "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 "
     "**1601–2403ms** 之间摆（四次实测 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；"
     "2026-10-18 那次 2403ms `meets_target=false`），"
