@@ -75,6 +75,65 @@ browser_candidates(windows=False)
 L7 是防"修一处、别处长出来"的那条。它带一张**允许清单**，每条都要写理由 ——
 清单短是设计目标。
 
+## 7. **第一次真的在 Linux 上跑后端测试**（2026-10-18，WSL Ubuntu 24.04）
+
+这一节把 §5「没做的」里最长那条（"没有在 Linux 上跑过任何东西"）改掉了。做法不是等 CI
+（账单一直不解开），而是用本机已有的 **WSL2 + Ubuntu-24.04**（`wsl -l -v` 里一直是 `Stopped`，
+我一直以为"本机没有 Linux" —— 这是本轮第二个被推翻的假设）：
+
+```bash
+# 一次性准备（WSL 里）：apt 装 python3.12-venv，然后
+python3 -m venv ~/cb-venv && ~/cb-venv/bin/python -m pip install -e "/mnt/d/work/codex-battlefield/api[dev]"
+# 跑后端整套
+cd /mnt/d/work/codex-battlefield/api && ~/cb-venv/bin/python -m pytest -q -o addopts="--timeout=90" -n 4
+```
+
+### 7.1 结果：修掉 §7.2/§7.3 之后 **1728 通过 / 18 失败 / 12 跳过，4 分 32 秒**
+
+（第一次跑、还没修时是 **1725 通过 / 20 失败**，4 分 23 秒 —— 两次都是同一台机器、同一份代码树。）
+
+（Windows 同一份是 1753 通过 / 0 失败。也就是说 Linux 侧**不是"跑不完"**，
+而是"跑得完，但有 20 条红的" —— 之前"45 分钟跑不完"的结论与本机这次实测对不上，
+说明那是 CI runner 上的另一个问题，见 §7.4。）
+
+### 7.2 那 20 条里，**先抓到一个会自杀的真缺陷**
+
+`scripts/bench_supervise.py` 在 POSIX 上做 `os.killpg(os.getpgid(child), SIGKILL)`，
+但子进程**没有** `start_new_session` —— 于是 `getpgid(child)` 返回的是**调用方那一组**，
+`killpg` 把调它的 pytest 自己 SIGKILL 了。症状极具误导性：**日志停在用例名上、连 traceback
+都没有**（内核杀进程不给解释器留遗言），看起来就像"Linux 上莫名其妙卡住/被杀"。
+
+* 修法：POSIX 上 `Popen(..., start_new_session=True)`；`terminate_tree` 再加一道保险 ——
+  目标与自己同组时**拒绝 killpg**，改为逐个 SIGKILL，且**绝不杀自己**；
+* 判据：`test_supervisor_must_not_signal_its_own_process_group`（POSIX 专用）+
+  `test_supervisor_spawns_the_child_in_its_own_session`（源码级，两个平台都跑）；
+* 效果：修之前整套测试在 9%–26% 处被杀；修之后能跑完（4 分 23 秒）。
+
+### 7.3 还抓到一处产品级路径缺陷：迁移时写死反斜杠
+
+`migration.rewrite_worktree_paths` 重写旧路径时拼 `f"{新前缀}\{tail}"`（写死反斜杠）。
+POSIX 上反斜杠是普通字符 → 迁移后的 worktree 路径变成 `…/worktrees\node-a`，
+`worktrees.is_managed_worktree()` 的包含判断失败 → **那个 worktree 再也回收不掉**。
+修法：分隔符跟着**原路径**走；判据 `test_migration.py::test_rewrite_keeps_the_original_separator`
+（两个平台都跑，Windows 上等价于恒真、Linux 上就是反例）。
+
+### 7.4 剩下 18 条红，逐类记账（没有一条影响 Linux 上的正常运行）
+
+| 类别 | 条数 | 例子 | 性质 |
+|---|---|---|---|
+| **测试写成了 Windows-only，却没加平台守卫** | 5 | `test_watchdog_install_command_*`（产品明确"只有 Windows 支持"）、`test_l4_windows_candidates_*`、`test_project_binding::b1`（用 `Z:\…` 当"缺失目录"，POSIX 上它是相对路径）、`test_project_store::worktree_drive_comparison`（`Path.drive` 在 POSIX 恒为空） | 测试问题 |
+| **本地跑法的伪失败** | 3 | `test_runner_tools` 逐字节比对（模板在 Windows 检出里是 CRLF，生成器写 LF）、脚手架/`web/dist` 相关 | 我们是在 `/mnt/d`（drvfs）上跑，**CI 的干净检出不会这样** |
+| **需要 Windows 侧工具** | 5 | `test_provider_wire_format` F1/F2/F5/F6 选中了 PATH 里的 `codex.cmd`（`Exec format error`）；`test_provider_matrix` M8 需要 `pwsh` | 环境 |
+| **扫描器在 drvfs 上超时** | 2 | `test_public_tree_hygiene` H1/H3（`pytest-timeout >90s`） | 环境（drvfs 慢），但值得查 SKIP_DIRS |
+| 其它路径断言 | 3 | `test_workspace_follows_project`、`test_migration::migrate_copies_and_rewrites`（已随 §7.3 修复而变绿） | 混合 |
+
+**这些没有在本轮全修**：它们不影响"Linux 上能不能跑起来"，而且其中 3 类是**本地跑法的伪失败**
+（在 drvfs 上跑 Windows 检出）。下一轮的第一件事是把"测试自己该不该跑"按平台分清楚
+（`skipif(sys.platform == 'win32')` / 反向），让 Linux 的这 20 条变成 0 条 —— 那时 CI 的
+ubuntu 作业才有意义。
+
+**仍未验**：真 Linux CI（`ubuntu-latest`，账单解开之前拿不到）；macOS（本机没有）。
+
 ## 5. 没做的（如实写下）
 
 ### 5.1 还有一处**产品级**的 Windows 假定（不是路径问题）

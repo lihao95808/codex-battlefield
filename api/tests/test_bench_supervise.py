@@ -114,6 +114,39 @@ def test_supervisor_kills_a_stalled_child_and_writes_a_note(tmp_path: pathlib.Pa
     assert "杀" in text and "卡住" in text
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="只有 POSIX 才有进程组这件事")
+def test_supervisor_must_not_signal_its_own_process_group(tmp_path: pathlib.Path) -> None:
+    """POSIX 上「杀卡住的子进程」绝不能把**监督器自己（乃至调用方）**的进程组一起杀掉。
+
+    真实事故（2026-10-18，WSL Ubuntu）：`subprocess.Popen` 没设 `start_new_session`，
+    于是 `os.getpgid(child)` 返回的是**调用方那一组**，`killpg` 把 pytest 自己 SIGKILL 了 ——
+    症状是测试日志停在用例名上、连 traceback 都没有（内核杀进程不给解释器留遗言）。
+    那一条卡了整整一轮：后端的 Linux 记录一直"跑不完/没日志"，真正原因是**测试把自己杀了**。
+
+    这条判据不依赖"pytest 还活着"这种隐式事实，而是直接问 `terminate_tree`：
+    **当目标 pid 与自己同组时，它必须拒绝 killpg，并改用逐个 SIGKILL**。
+    """
+
+    supervisor = _load()
+    message = supervisor.terminate_tree(os.getpid())
+    assert message.startswith("refused killpg"), message
+    # 走到这里本身就说明进程没被杀；再补一条明确的：
+    assert os.getpgid(0) == os.getpgid(os.getpid())
+
+
+def test_supervisor_spawns_the_child_in_its_own_session() -> None:
+    """源码级判据：POSIX 分支上必须带 `start_new_session`。
+
+    上面那条证明的是"拒绝杀自己"这道保险生效；保险只是兜底 —— 正常路径应该从一开始就让
+    子进程自成一组，否则"只杀子进程树"的语义不成立。
+    """
+
+    source = pathlib.Path(SUPERVISOR).read_text(encoding="utf-8")
+    assert 'start_new_session=(os.name != "nt")' in source, (
+        "POSIX 上必须让子进程自成会话；Windows 上不需要（taskkill /T 已经按树杀）"
+    )
+
+
 def test_descendant_pids_walks_the_whole_tree() -> None:
     """要 dump 的是**整棵**进程树：跑批进程是 venv 转发器，真跑事件循环的是它的子进程。"""
     supervisor = _load()

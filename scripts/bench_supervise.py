@@ -76,8 +76,25 @@ def terminate_tree(pid: int) -> str:
         result = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)
         return f"taskkill /T /F {pid} → exit={result.returncode}"
     try:
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
-        return f"killpg {pid} → SIGKILL"
+        group = os.getpgid(pid)
+    except OSError as exc:
+        return f"getpgid {pid} 失败：{type(exc).__name__}: {exc}"
+    if group == os.getpgid(0):
+        # 子进程和我们同组：`killpg` 会把**我们自己**一起杀掉（实测症状是调用方立刻 SIGKILL、
+        # 没有 traceback）。此时只能按 pid 逐个杀它这棵子树，并把这件事说出来。
+        killed: list[int] = []
+        own_pid = os.getpid()
+        # **绝不能**杀到自己：这条分支存在的理由就是别把调用方一起带走。
+        for item in [item for item in [pid, *descendant_pids(_process_table(), pid)] if item != own_pid]:
+            try:
+                os.kill(item, signal.SIGKILL)
+                killed.append(item)
+            except OSError:
+                continue
+        return f"refused killpg {pid}（与监督器同组 pgid={group}）；改为逐个 SIGKILL：{killed}"
+    try:
+        os.killpg(group, signal.SIGKILL)
+        return f"killpg {pid} (pgid={group}) → SIGKILL"
     except OSError as exc:
         return f"killpg {pid} 失败：{type(exc).__name__}: {exc}"
 
@@ -362,7 +379,13 @@ def main() -> int:
         return 2
     report_path = pathlib.Path(args.report)
     note_path = report_path.with_suffix(report_path.suffix + ".supervisor.txt")
-    child = subprocess.Popen(command)
+    # ⚠️ POSIX 上必须让子进程自成一个会话/进程组：`terminate_tree()` 用的是 `killpg`，
+    # 而 `getpgid(child)` 在**没有** `start_new_session` 时返回的是**我们自己的组** ——
+    # 于是"杀掉卡住的子进程"会把自己（甚至调用方的整个进程组）一起 SIGKILL。
+    # 这是 2026-10-18 在 WSL Ubuntu 上跑后端测试时才暴露的真缺陷：
+    # `test_supervisor_kills_a_stalled_child_and_writes_a_note` 一跑到就把 pytest 杀掉了
+    # （日志停在那条用例名上、没有 traceback —— 内核 SIGKILL 不会给解释器留遗言）。
+    child = subprocess.Popen(command, start_new_session=(os.name != "nt"))
     child_started = time.time()
     print(f"[监督] 子进程 pid={child.pid}；报告={report_path}；停滞阈值={args.stall_seconds}s", flush=True)
     try:

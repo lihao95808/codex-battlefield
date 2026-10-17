@@ -188,6 +188,44 @@ def test_rewrite_is_idempotent(tmp_path: pathlib.Path, home: pathlib.Path) -> No
     assert again == 0, "重写不幂等：第二次仍然改动了行"
 
 
+def test_rewrite_keeps_the_original_separator(tmp_path: pathlib.Path) -> None:
+    """重写后的路径必须沿用**原来的分隔符**，不能一律写成反斜杠。
+
+    真实缺陷（2026-10-18，WSL Ubuntu 上第一次跑后端测试时暴露）：旧路径是 POSIX 形状
+    （`/state/worktrees/node-a`）时，重写逻辑拼出 `新前缀\node-a` —— 反斜杠在 POSIX 里
+    是普通字符，于是 `worktrees.is_managed_worktree()` 的包含判断失败：迁移之后那个
+    worktree **再也回收不掉**（守卫认为它不在受管目录里）。
+    """
+
+    from app import worktrees
+
+    db = tmp_path / "legacy.sqlite3"
+    con = sqlite3.connect(str(db))
+    try:
+        con.execute("CREATE TABLE task_nodes (id TEXT PRIMARY KEY, worktree_path TEXT)")
+        old_root = tmp_path / "state" / "worktrees"
+        posix_path = str(old_root / "node-a")
+        con.execute("INSERT INTO task_nodes (id, worktree_path) VALUES (?, ?)", ("node-a", posix_path))
+        con.commit()
+    finally:
+        con.close()
+
+    new_home = tmp_path / "moved"
+    new_root = new_home / "worktrees"
+    changed = migration.rewrite_worktree_paths(db, old_root=old_root, new_root=new_root)
+
+    assert changed == 1
+    con = sqlite3.connect(str(db))
+    try:
+        (value,) = con.execute("SELECT worktree_path FROM task_nodes WHERE id = 'node-a'").fetchone()
+    finally:
+        con.close()
+    assert value == str(new_root / "node-a"), value
+    assert worktrees.is_managed_worktree(new_home, value), (
+        "重写后的路径过不了 worktree 守卫 —— 迁移后它会被当成“仓库外的目录”，再也回收不掉"
+    )
+
+
 def test_rewrite_leaves_foreign_paths_alone(tmp_path: pathlib.Path, home: pathlib.Path) -> None:
     """不匹配旧根的路径必须原样保留（不能误改成别的工程的位置）。"""
     repo = _make_legacy_repo(tmp_path, [])

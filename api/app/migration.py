@@ -193,6 +193,12 @@ def rewrite_worktree_paths(db_path: Path, *, old_root: Path, new_root: Path) -> 
         ).fetchall()
         changed = 0
         updates: list[tuple[str, str]] = []
+        # 分隔符要**跟着原来的路径走**，不能写死反斜杠：2026-10-18 在 WSL Ubuntu 上
+        # 跑后端测试时暴露的缺陷 —— 旧路径是 `/state/worktrees\node-a`（POSIX）时，
+        # 这里拼出 `新前缀\node-a`（反斜杠在 POSIX 里是普通字符），于是
+        # `worktrees.is_managed_worktree()` 的包含判断失败、迁移后的 worktree 被判成"不在
+        # 受管目录里"。Linux 上这条会让 migration 之后再也回收不掉那个 worktree。
+        separator = "\\" if ("\\" in old_prefix and "/" not in old_prefix) else "/"
         for node_id, raw in rows:
             text = str(raw)
             tail = None
@@ -204,7 +210,7 @@ def rewrite_worktree_paths(db_path: Path, *, old_root: Path, new_root: Path) -> 
                 tail = ""
             if tail is None:
                 continue
-            updates.append((f"{new_prefix}\\{tail}" if tail else new_prefix, node_id))
+            updates.append((f"{new_prefix}{separator}{tail}" if tail else new_prefix, node_id))
         for value, node_id in updates:
             con.execute("UPDATE task_nodes SET worktree_path = ? WHERE id = ?", (value, node_id))
             changed += 1
