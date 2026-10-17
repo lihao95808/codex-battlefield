@@ -155,6 +155,16 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
       }),
       script_requests: scripts.length,
       script_ms: Math.round(sum(scripts)),
+      // 首屏那一瞬间页面打了多少 API、以及**树的请求落在哪一段**。
+      // 目的：把"handler 慢"和"被自己的并发压住"分开 —— 若树请求与十几个 API 同时飞，
+      // 那 0.8–2.3 秒更像饱和排队，而不是这个 handler 本身贵。
+      api_requests: resources
+        .filter((item) => item.name.includes('/api/'))
+        .map((item) => ({
+          url: item.name.replace(/^https?:\/\/[^/]+/, '').split('?')[0],
+          start_ms: Math.round(item.startTime),
+          duration_ms: Math.round(item.duration),
+        })),
     };
   });
 
@@ -180,6 +190,21 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     expect(response.ok()).toBe(true);
   }
   const serverMs = Math.min(...samples);
+
+  // 服务端**自己的账**（P5-1 的 `/api/metrics`，按路由模板记滑动窗口分位数）。
+  // 它和浏览器的 `wait_ms` 一比就能把两件事分开（这是本轮要问的问题）：
+  //   * 两者接近            → 时间真的花在 **handler / 库** 里；
+  //   * 服务端说很快而浏览器等很久 → 请求在**排队**（事件循环被同步工作占着 / 连接被占满）。
+  const metricsResponse = await page.request.get(`http://127.0.0.1:${API_PORT}/api/metrics?limit=10`);
+  const metricsPayload = metricsResponse.ok()
+    ? ((await metricsResponse.json()) as { routes?: Record<string, unknown>[] } | Record<string, unknown>)
+    : null;
+  const metricsRoutes = (() => {
+    if (!metricsPayload) return [] as Record<string, unknown>[];
+    const payload = metricsPayload as { routes?: Record<string, unknown>[]; slowest?: Record<string, unknown>[] };
+    return payload.routes ?? payload.slowest ?? [];
+  })();
+  const treeMetric = metricsRoutes.find((item) => String(item.key ?? '').includes('/api/tree')) ?? null;
 
   // 主线程账单：长任务次数、总计、最长一次（含前 8 条的起点/时长）。
   const longTasks = await page.evaluate(() => {
@@ -208,6 +233,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
         warm_ms: warmMs,
         breakdown,
         server_tree_ms: { min: serverMs, samples },
+        server_metrics_tree: treeMetric,
         long_tasks: longTasks,
         target_ms: TARGET_MS,
         ratchet_ms: RATCHET_MS,
@@ -228,6 +254,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
       `棘轮 ${RATCHET_MS}ms，达标=${coldMs < TARGET_MS ? '是' : '否'}）` +
       `payload=${(payloadBytes / 1024).toFixed(0)}KB 服务端取树=${JSON.stringify(samples)}ms ` +
       `主线程长任务=${longTasks.count} 次/共 ${longTasks.total_ms}ms/最长 ${longTasks.longest_ms}ms ` +
+      `服务端自报=${JSON.stringify(treeMetric)} ` +
       `拆解=${JSON.stringify(breakdown)}`,
   );
 

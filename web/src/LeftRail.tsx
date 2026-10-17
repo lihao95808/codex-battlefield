@@ -264,23 +264,38 @@ export function LeftRail({ view }: { view: View }) {
             </section>
           </details>
   
-          <WatchdogPanel
-            state={view.watchdogState}
-            layout={view.layoutState}
-            busy={view.busy}
-            result={view.watchdogResult}
-            onInstall={view.onInstallWatchdog}
-            onRunOnce={view.onRunWatchdogOnce}
-            onToggleDrain={view.onToggleApiRestartDrain}
-          />
-  
+          {/*
+            ⚠️ 首屏**不**挂这两个重面板，等树到位再挂（2026-10-17 实测）：
+            千节点下 `/api/auto-policy` 要 **1.34 秒**、`/api/watchdog/state` 要 **1.30 秒**，
+            而首屏同时会打 ~15 个 API（它们都在 414–419ms 那一瞬间发出）。同进程里
+            Python 的 CPU 密集 handler 被 GIL 串起来，于是**关键路径上的 `/api/tree`
+            被这两个面板挤到 2.3 秒**（服务端空闲时同一棵树只要 0.24–0.3 秒）。
+            判据 `web/e2e/perf-first-screen.spec.ts` 的拆解把这条链量出来了
+            （`api_requests` 里那两条 1.3 秒的请求 + 树请求的 `wait_ms`）。
+            树到位后再挂，面板内容一样会出来，只是晚几十毫秒。
+          */}
+          {view.tree?.tasks.length ? (
+            <>
+              <WatchdogPanel
+                state={view.watchdogState}
+                layout={view.layoutState}
+                busy={view.busy}
+                result={view.watchdogResult}
+                onInstall={view.onInstallWatchdog}
+                onRunOnce={view.onRunWatchdogOnce}
+                onToggleDrain={view.onToggleApiRestartDrain}
+              />
+
+              <CrossProjectPanel />
+
+              <CostPanel />
+
+              <PolicyPanel />
+            </>
+          ) : null}
+
+          {/* 绑定引导**不能**跟着上面那个门走：它就是给"还没有树"的状态用的。 */}
           <ProjectOnboarding onBound={() => view.loadTree().catch(() => undefined)} />
-  
-          <CrossProjectPanel />
-  
-          <CostPanel />
-  
-          <PolicyPanel />
   
           <PreAuthPanel />
   

@@ -107,6 +107,26 @@
   在同一个 E2E 里读它（或临时给 handler 打点）就能把"编排循环抢 CPU/库锁"与
   "handler 本身重"分开。**"渲染 1000 个节点很贵"不是主要故事**，
   下一步该动的是 ② 与 ④，而不是再删请求。
+
+  **⑤ 首屏被自己的面板挤住了 —— 已修，首屏 −31%。**
+  把首屏那一瞬间的 API 全部记下来（`api_requests`）后看到：页面在 **414–419ms 那一瞬间打了
+  15 个请求**，其中两条是重活 —— **`/api/auto-policy` 1343ms、`/api/watchdog/state` 1295ms**，
+  而关键路径的 `/api/tree` 是 2366ms。同进程里 Python 的 CPU 密集 handler 被 GIL 串起来，
+  所以**两个侧栏面板把树挤到了 2.3 秒**（服务端空闲时同一棵树只要 240ms）。
+
+  修法（`web/src/LeftRail.tsx`）：那两条重活所属的四个面板（Watchdog / CrossProject / Cost / Policy）
+  **等树到位再挂**（`view.tree?.tasks.length ? … : null`）；绑定引导 `ProjectOnboarding`
+  **不跟着这个门走**（它就是给"还没有树"用的）。面板内容照样出来，只是晚几十毫秒。
+
+  | 量 | 修前 | 修后 |
+  |---|---|---|
+  | `cold_ms` | 4406 / 4409 ms | **3033 ms**（−31%） |
+  | `/api/tree` `wait_ms`（TTFB） | 2299 / 2324 ms | **1167 ms** |
+  | `/api/tree` 服务端自报 p50 | 845 / 947 ms | **760 ms** |
+  | 两条重活的**开始时刻** | 415 ms（**与树并发**） | 1593 / 1610 ms（**树之后**） |
+
+  仍未达标（3.0s > 2s）。剩下的两个杠杆量得很清楚：**树自己的 TTFB 在负载下 760ms（空闲 240ms）**
+  与**客户端渲染 ≈1.0–1.4s**（长任务合计 977ms）。
   **CI 上量不出来（已如实记下）**：`run 38965425892`（windows-latest）跑到这条时**整套用例超时**
   ——`apiRequestContext.get: Test timeout of 180000ms exceeded`，E2E 步 `1 failed / 6 passed`。
   也就是说在这台 2 vCPU 的 CI runner 上，千节点首屏**走不完 180 秒**。所以判据在 `process.env.CI`
