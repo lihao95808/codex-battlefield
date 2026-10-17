@@ -37,8 +37,18 @@
 | 代价 | 每次起 agent 扫一遍该树的 `run_records`（O(运行数)）—— 这就是它**默认关闭**的原因 |
 | 判据 | `api/tests/test_budget_ceiling.py` B1–B6（B4 是接线判据：删掉钩子就红） |
 
-**仍未做**：**金额**闸（只有 token）—— 费用只有端点自报、币种还可能不同，
-"花多少钱就停"要先把 §3 那四类"读不到"处理掉，否则闸门会在"读不到费用"时无声失效。
+**仍未做**：**金额闸**在同一天也补上了，但口径不同 —— 它必须先回答"我知道花了多少吗"：
+
+| 情形 | 金额闸的行为 |
+|---|---|
+| 端点没自报金额（`cost_by_currency: null`） | **不暂停**，写 `budget.cost_unreadable` 说明原因 |
+| 没配币种（`budget_cost_currency` 空） | **不暂停**，同一个事件 |
+| 记过的是别的币种 | **不暂停**，写 `budget.cost_currency_absent` |
+| 币种匹配且已超 | 整树休眠 + `budget.cost_ceiling`（带 used / ceiling / currency / `other_currencies`） |
+
+为什么"读不到"不暂停：拿猜测的币种去暂停树是**误报**，而误报会让用户不再相信闸门；
+但静默失效也不行，所以每种"没生效"的原因都落一条事件（同一棵树同一种原因只记一次）。
+判据 `api/tests/test_budget_cost_ceiling.py` C1–C7。**仍未做**：跨币种换算。
 
 
 ## 3. 四类"读不到"必须能被分辨

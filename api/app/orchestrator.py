@@ -14,6 +14,7 @@ import time
 import traceback
 import webbrowser
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -198,6 +199,8 @@ class Orchestrator:
             auto_lower = max(1, min(int(self.settings.auto_concurrency_min), auto_upper))
             initial_capacity = auto_upper if self.settings.goal_mode else auto_lower
         self._agent_semaphore = DynamicConcurrencyLimiter(initial_capacity)
+# 金额闸的警告去重：`(root_id, kind)` 一旦记过就不再刷事件（进程内，重启后重新提醒一次）。
+        self._cost_gate_warned: set[tuple[str, str]] = set()
         self._external_codex_process_cache: tuple[datetime, list[dict[str, Any]]] | None = None
         self._external_codex_process_scan_failed = False
         self._pending_codex_slot_reservations: dict[str, datetime] = {}
@@ -2290,6 +2293,105 @@ class Orchestrator:
         await self.set_budget_guard(root_id, BUDGET_TOKEN_GUARD_RESUME_SECONDS, reason)
         return True
 
+    async def _hold_agent_start_for_cost_budget(self, task_id: str, phase: str) -> bool:
+        """**树级累计金额闸**（P3-1 的第三道闸）：花到上限就停，但**读不到钱时不假装读到了**。
+
+        ## 与 token 闸的关键差别
+
+        token 数每一侧都能自己数；**金额只有端点自报**，而且币种可能不同。
+        所以这道闸必须先回答"我知道花了多少吗"，而不是"花了多少"：
+
+        | 情形 | 行为 | 为什么 |
+        |---|---|---|
+        | 上限 0 / 未配置币种 | 不拦，记一条 `budget.cost_unreadable`（每棵树一次） | 拿猜测的币种暂停树 = 误报；但静默失效也不行，所以事件里写明原因 |
+        | 有金额、币种匹配、未超 | 不拦 | — |
+        | 有金额、币种匹配、已超 | 整树休眠 + `budget.cost_ceiling` 事件（used/ceiling/currency） | 与 token 闸同一套 `set_budget_guard` |
+        | 有金额但配置的币种**不在其中** | 不拦 + `budget.cost_currency_absent` 事件 | "没记过 CNY" 与 "没花过 CNY" 是两件事 |
+        | 多币种 | 只比配置的那个币种，其余写进事件 `other_currencies` | 跨币种相加没有意义（`cost-accounting.md` §2） |
+        """
+
+        ceiling = float(self.settings.budget_cost_ceiling or 0)
+        if ceiling <= 0:
+            return False
+        currency = str(self.settings.budget_cost_currency or "").strip().upper()
+        with SessionLocal() as db:
+            task = self._get_task(db, task_id)
+            root_id = self._root_id_for_task(db, task)
+            if self._active_budget_guard(root_id):
+                return True
+            if task.status in TERMINAL_STATUSES or task.status in STOPPED_STATUSES:
+                return False
+            report = cost.cost_report(db, root_id)
+            attribution = report.get("attribution") or {}
+            amounts = attribution.get("cost_by_currency")
+            missing = int(attribution.get("runs_without_usage") or 0)
+            runs = int(attribution.get("runs") or 0)
+
+            def warn(kind: str, message: str, payload: dict[str, Any]) -> None:
+                """同一棵树同一种原因只记一次：否则每次起 agent 都会刷一条。"""
+
+                key = (root_id, kind)
+                if key in self._cost_gate_warned:
+                    return
+                self._cost_gate_warned.add(key)
+                if db.get(TaskNode, root_id) is not None:
+                    self._add_event(db, root_id, kind, message, {"root_id": root_id, **payload})
+                    db.commit()
+
+            if not isinstance(amounts, Mapping) or not amounts:
+                warn(
+                    "budget.cost_unreadable",
+                    "金额闸开着，但这棵树没有任何一条运行带回费用 —— 无法判断花了多少钱，所以**没有**暂停。"
+                    "要让这道闸生效，端点必须自报金额（见 docs/cost-accounting.md §3）。",
+                    {"ceiling": ceiling, "currency": currency, "runs": runs, "runs_without_usage": missing},
+                )
+                return False
+            normalized = {str(code).upper(): float(value) for code, value in amounts.items()}
+            if not currency:
+                warn(
+                    "budget.cost_unreadable",
+                    "金额闸开着，但没配置币种（budget_cost_currency）—— 不知道该比哪一个，所以**没有**暂停。",
+                    {"ceiling": ceiling, "currencies": sorted(normalized)},
+                )
+                return False
+            if currency not in normalized:
+                warn(
+                    "budget.cost_currency_absent",
+                    f"这棵树还没有记过 {currency} 的费用（记过：{'、'.join(sorted(normalized))}），"
+                    "无法判断是否超上限，所以**没有**暂停。",
+                    {"ceiling": ceiling, "currency": currency, "currencies": sorted(normalized)},
+                )
+                return False
+            used = float(normalized[currency])
+            others = {code: value for code, value in normalized.items() if code != currency}
+
+        if used < ceiling:
+            return False
+        reason = (
+            f"树级 {currency} 上限已用完：本树已花 {used:,.2f} {currency} / 上限 {ceiling:,.2f} {currency}。"
+            "树已休眠，等人工确认后再恢复 —— 这是这棵树自己的上限，不是账户余额。"
+        )
+        with SessionLocal() as db:
+            if db.get(TaskNode, root_id) is not None:
+                self._add_event(
+                    db,
+                    root_id,
+                    "budget.cost_ceiling",
+                    reason,
+                    {
+                        "root_id": root_id,
+                        "task_id": task_id,
+                        "phase": phase,
+                        "used": used,
+                        "ceiling": ceiling,
+                        "currency": currency,
+                        "other_currencies": others,
+                    },
+                )
+                db.commit()
+        await self.set_budget_guard(root_id, BUDGET_TOKEN_GUARD_RESUME_SECONDS, reason)
+        return True
+
     def _try_reserve_pending_codex_slot_with_capacity(self, task_id: str, phase: str) -> bool:
         capacity = max(1, self._agent_semaphore.capacity)
         outcome: dict[str, Any] = {}
@@ -2374,6 +2476,8 @@ class Orchestrator:
         if await self._hold_agent_start_for_machine_safety(task_id, phase):
             return False
         if await self._hold_agent_start_for_token_budget(task_id, phase):
+            return False
+        if await self._hold_agent_start_for_cost_budget(task_id, phase):
             return False
         reserved_pending_slot = self._runner_mode_for_task(task_id) == "real"
         if reserved_pending_slot:

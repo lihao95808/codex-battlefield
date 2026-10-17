@@ -128,6 +128,27 @@ SETTINGS: tuple[EditableSetting, ...] = (
     # P3-1 的第二道闸：树级累计 token 上限。**默认 0（关）** —— 它会在每次起 agent 前
     # 扫一遍这棵树的 run_records，那是真实开销；想封顶成本的人明确打开它。
     EditableSetting(
+        key="budget_cost_ceiling",
+        env="CODEX_BATTLEFIELD_BUDGET_COST_CEILING",
+        label="树级金额上限",
+        kind="float",
+        group="policy",
+        minimum=0.0,
+        maximum=100000000.0,
+        help=(
+            "0 = 关闭。与 token 闸不同：金额只有端点自报，**必须**同时配置币种；"
+            "读不到金额时不会暂停（那会变成误报），但会写一条事件说明为什么没生效。"
+        ),
+    ),
+    EditableSetting(
+        key="budget_cost_currency",
+        env="CODEX_BATTLEFIELD_BUDGET_COST_CURRENCY",
+        label="金额上限的币种",
+        kind="str",
+        group="policy",
+        help="例如 CNY / USD。留空 = 金额闸不生效（跨币种相加没有意义）。",
+    ),
+    EditableSetting(
         key="budget_token_ceiling",
         env="CODEX_BATTLEFIELD_BUDGET_TOKEN_CEILING",
         label="树级 token 上限",

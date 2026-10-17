@@ -253,6 +253,18 @@ class Settings:
     budget_token_ceiling: int = int(
         _env_or_config("CODEX_BATTLEFIELD_BUDGET_TOKEN_CEILING", "budget_token_ceiling") or "0"
     )
+    # 金额闸的另一半：**这一棵树**累计花了多少钱。`0` = 关闭（默认）。
+    #
+    # 它比 token 闸多一个必须回答的问题：**币种**。费用只有端点自报，不同端点的币种可能不同，
+    # 所以这里要求显式写一个币种（`budget_cost_currency`）；没写就等于"不知道比什么"，
+    # 闸门**不会**拿一个猜测的币种去暂停树（那会制造误报），而是记一条
+    # `budget.cost_unreadable` 事件说明"为什么它没生效"。
+    budget_cost_ceiling: float = float(
+        _env_or_config("CODEX_BATTLEFIELD_BUDGET_COST_CEILING", "budget_cost_ceiling") or "0"
+    )
+    budget_cost_currency: str = (
+        _env_or_config("CODEX_BATTLEFIELD_BUDGET_COST_CURRENCY", "budget_cost_currency") or ""
+    ).strip().upper()
     codex_reasoning_effort_constitution: str = os.getenv(
         "CODEX_BATTLEFIELD_CODEX_REASONING_EFFORT_CONSTITUTION", ""
     )
