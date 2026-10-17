@@ -200,6 +200,31 @@ def test_c6_multiple_currencies_only_compare_the_configured_one(tmp_path: Path) 
     assert payload["used"] == 6.0
     assert payload["other_currencies"] == {"USD": 100.0}, payload
 
+def test_c8_a_big_other_currency_must_not_pause(tmp_path: Path) -> None:
+    """**不换算**这条决定要有判据：别的币种再大，也不能拿它的数字去暂停这棵树。
+
+    C6 只证明“多币种时 used 只算配置的那个”。这条更尖：配置的 CNY 远低于上限，
+    而 USD 那笔远超上限 —— 如果哪天有人“顺手”把币种加起来或换算一下，
+    这里会立刻红，而失败信息会说明是哪一侧把它算进去了。
+    """
+
+    root_id, child_id = _seed(
+        tmp_path,
+        [
+            {"input_tokens": 1, "cost": {"amount": 0.5, "currency": "CNY"}},
+            {"input_tokens": 1, "cost": {"amount": 1000.0, "currency": "USD"}},
+        ],
+    )
+    orchestrator = Orchestrator(_settings(tmp_path, budget_cost_ceiling=5.0, budget_cost_currency="CNY"))
+
+    assert _hold(orchestrator, child_id) is False, (
+        "配置的 CNY 只有 0.5（上限 5），却因为 USD 那笔 1000 被暂停了 —— "
+        "说明币种被相加或换算了；跨币种换算需要汇率来源，我们没有，也不该偷偷做"
+    )
+    assert orchestrator.budget_guard_state(root_id)["status"] != "budget_guard_active"
+    assert _events(root_id, "budget.cost_ceiling") == []
+
+
 @pytest.mark.asyncio
 async def test_c7_the_hook_is_wired_into_agent_reservation(tmp_path: Path) -> None:
     """接线判据：起 agent 的入口必须拦住超金额上限的节点（删掉钩子这里就红）。"""

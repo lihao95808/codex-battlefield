@@ -42,7 +42,7 @@ JUDGEMENTS: dict[str, str] = {
     "P2-6": "`web/src/i18n.test.ts` + `i18n.detect.test.ts`（32 例，逐条变异过）",
     "P3-1": "`api/tests/test_budget.py`（16 例：时间窗守卫 / agent burst / 预警档）+ "
     "`test_budget_ceiling.py`（B1–B6：树级 token 上限，含接线判据）+ "
-    "`test_budget_cost_ceiling.py`（C1–C7：树级金额上限 + “读不到不误报”）+ "
+    "`test_budget_cost_ceiling.py`（C1–C8：树级金额上限 + “读不到不误报” + “不跨币种换算”）+ "
     "`test_settings_panel.py`（额度项）—— **没有** token 金额硬闸，见缺口清单",
     "P3-2": "`api/tests/test_cost.py`（区间而不是单值；样本不足拒绝给数）",
     "P3-3": "`api/tests/test_cost.py`（三维归因；取不到模型名不造假桶）",
@@ -79,8 +79,9 @@ GAP_REASONS: dict[str, str] = {
     "`api/tests/test_budget.py` 16 例）；② **agent burst**（每窗口允许起几个 agent，同文件）；"
     "③ **树级 token 上限**（`budget_token_ceiling`，默认关，`test_budget_ceiling.py` B1–B6，B4 是接线判据）；"
     "④ **树级金额上限**（`budget_cost_ceiling` + `budget_cost_currency`，默认关，"
-    "`test_budget_cost_ceiling.py` C1–C7；读不到金额 / 币种不匹配时**不误报**，而是写事件说明原因）。"
-    "**仍未做**：跨币种换算（需要汇率来源与口径，属新依赖，不偷偷加）。"
+    "`test_budget_cost_ceiling.py` C1–C8；读不到金额 / 币种不匹配时**不误报**，而是写事件说明原因；"
+    "C8 专门钉住“不跨币种换算”这条决定）。"
+    "**仍未做**：跨币种换算 —— **有意不做**（需要汇率来源与口径，属新依赖），C8 钉住“不换算”。"
     "历史上这里一度把“token / 金额硬闸”写成已落地而代码里只有时间窗守卫 —— 那次纠正的记录见 "
     "`docs/cost-accounting.md` §2。",
     "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 "
