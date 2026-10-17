@@ -980,19 +980,25 @@ class CodexExecRunner(BaseCodexRunner):
         prompt_path = run_dir / f"{kind}-prompt.txt"
         activity_path = run_dir / f"{kind}-activity.txt"
         schema_path = self.schema_dir / schema_name
-        prompt_path.write_text(prompt, encoding="utf-8")
 
         args = self._codex_exec_args(cwd, schema_path, output_path, sandbox, kind)
         command_display = " ".join(shlex.quote(part) for part in args) + " < prompt"
         attempts = 1 + max(0, self.settings.codex_retry_attempts)
         log_chunks: list[bytes] = []
         usage: dict | None = None
+        # 「自纠重试」的反馈块：**只在**上一次是"输出不是合法 JSON"时非空。
+        # 每个 attempt 用 `prompt + parse_feedback` 作为真正发出去的提示词，
+        # 并且把这一版写进 `*-prompt.txt` —— 否则"提示词文件"记的是没发过的那版，
+        # 事后复盘的依据就是假的。
+        parse_feedback = ""
 
         for attempt in range(1, attempts + 1):
             if output_path.exists():
                 output_path.unlink()
             if activity_path.exists():
                 activity_path.unlink()
+            effective_prompt = prompt if not parse_feedback else f"{prompt}{parse_feedback}"
+            prompt_path.write_text(effective_prompt, encoding="utf-8")
             log_chunks.append(f"\n--- codex {kind} attempt {attempt}/{attempts} ---\n".encode("utf-8"))
             logs_path.write_bytes(b"".join(log_chunks))
             stdout = b""
@@ -1007,7 +1013,7 @@ class CodexExecRunner(BaseCodexRunner):
                 )
                 exit_code, stdout, watchdog_message = await self._communicate_with_watchdog(
                     process,
-                    prompt.encode("utf-8"),
+                    effective_prompt.encode("utf-8"),
                     output_path,
                     logs_path,
                     activity_path,
@@ -1050,10 +1056,27 @@ class CodexExecRunner(BaseCodexRunner):
 
             try:
                 payload = self._read_payload(output_path, kind)
+                parse_error: Exception | None = None
             except Exception as exc:
+                parse_error = exc
                 payload = self._failure_payload(kind, f"Codex {kind} output parse failed: {exc}")
                 if exit_code == 0:
                     exit_code = 1
+
+            if parse_error is not None and attempt < attempts:
+                # 结构漂移 ≠ 模型不会做：小模型常把 JSON 多写一个 `}`、或在对象后面再补一段。
+                # 实测（2026-10-18，deepseek-flash，recursive probe）：planner 的
+                # `--output-last-message` 里是 `…证据。"},"block_report":null}`，`Extra data`
+                # 于 char 1042 → 被判 `blocked` → 父节点转成"递归指导"子任务，整棵树
+                # 走偏。自纠一次（把解析错误喂回去重发提示词）比让误判继续传播便宜得多。
+                parse_feedback = retry.parse_failure_feedback(kind, str(parse_error))
+                log_chunks.append(
+                    f"\n--- retrying codex {kind} after invalid JSON ({attempt}/{attempts}): {parse_error} ---\n".encode(
+                        "utf-8"
+                    )
+                )
+                logs_path.write_bytes(b"".join(log_chunks))
+                continue
 
             if exit_code == 0:
                 return RunnerEnvelope(

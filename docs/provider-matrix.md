@@ -184,6 +184,29 @@ config load when an unused `model_providers` entry still sets `wire_api = chat`"
 `Set-Item -Path "Env:$EnvKey" -Value $ApiKey`，会把用户 shell 里**已有的真实凭据覆盖成占位值**。
 现在只在变量不存在时才写。
 
+### 4.3 真实端点实测：**可达性跑通了，鉴权这条只验了一半**（2026-10-18）
+
+§4.0 用的是本机假网关（证明"端点契约"），这一节换**真实端点**：本机 `127.0.0.1:15721` 上的
+OpenAI 兼容代理（`wire_api = "responses"`，配置里 `requires_openai_auth = false`）。
+脚本仍是 `scripts/verify_provider_planner.py`（只发**一次** planner 调用），隔离 `CODEX_HOME`
+由 `-CodexHome` 指定，不碰 `~/.codex`。
+
+| 组 | 端点 | 结果 | 证据 |
+|---|---|---|---|
+| 正样本 | `127.0.0.1:15721/v1` | `ok=true`，`exit_code=0` | `decision=execute`、`leaf_certainty=300%`、`PlannerDecision` 校验通过，约 15 秒 |
+| 负样本 | `127.0.0.1:15999/v1`（无监听） | `ok=false`，`exit_code=124` | `reason=资源/流量类阻塞，可等待后重试：Codex planner hard timeout after 60s.` |
+
+负样本那条值得单独说：**端点不通时看到的是"硬超时"，不是"连接被拒绝"** —— codex 自己会退避
+重试，把连接失败吞成一次慢失败。所以"这个端点到底通不通"最快的判据是：**给它一个明确的
+`--timeout`，看它是"很快回来"还是"耗满超时"**。本机这一对的差别是 15 秒 vs 60 秒，够分辨。
+
+**仍然没验证的**（与 §5 一致，不要外推）：
+
+* 需要凭据的云端端点：本机没有那种凭据，也不打算为演示买一份；
+* **"发错的 key 会被拒"**：本机这个端点 `requires_openai_auth = false`，**没有 key 校验** ——
+  所以"鉴权"这一条在这里只证明了"不带 key 也能连通"，证不了"错的 key 会被 401"。
+  这一半要靠使用者在自己有鉴权的端点上跑同一条命令。
+
 ## 5. 验证边界（这段和判据一样重要）
 
 **本仓库在无凭据机器上能验的**：
@@ -194,11 +217,11 @@ config load when an unused `model_providers` entry still sets `wire_api = chat`"
 
 **本仓库验不了的**（不要在别处当成"已验证"）：
 
-* **端点是否可达**：脚本不发任何请求；
+* **端点是否可达**：脚本不发任何请求（**已另行实测一次**：见 §4.3 的正/负样本）；
 * **该端点能不能跑通 planner / worker / verifier**：要凭据、要花钱、端点要活着 ——
   用 `scripts/verify_provider_planner.py`（一次 planner 调用）与
   `scripts/real_codex_smoke.py`（完整链路），两者都只在你自己的环境里跑；
-* **鉴权是否被接受**：凭据不在仓库里，也不该在。
+* **鉴权是否被接受**：凭据不在仓库里，也不该在；§4.3 只证明了「不带 key 也能连通」，证不了「错的 key 会被拒」。
 
 报告里的 `verified_here` / `not_verified_here` 两张清单就是这条边界的机器可读版本。
 

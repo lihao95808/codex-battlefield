@@ -158,7 +158,7 @@ verifier 独立复核（`verdict=pass`）：`Format-Hex` 逐字节比对 31 字�
 **没证明**（不要外推）：
 
 * **只有一轮、单节点**：`run_kinds = [planner, worker, verifier]`，**acceptance agent 这次没有跑**
-  （单节点树由 verifier 收口），所以"便宜档能不能当 acceptance"仍无答案；
+  （单节点树由 verifier 收口），所以"便宜档能不能当 acceptance"仍无答案（**§8 已补**：多节点一轮里真实 acceptance 跑过并通过）；
 * **没有成功率**：要成功率必须反复跑，本文没做；
 * **没有失败模式样本**：这次一次过，没观察到它怎么写错（对比 §3：`qwen3.8-flash` 的失败形态是"结构漂移"）；
 * **金额未取到**：端点只在 `usage_json` 里回传 token，不回传费用 —— 按"取不到就记 null"的规矩，这里不推算；
@@ -166,3 +166,162 @@ verifier 独立复核（`verdict=pass`）：`Format-Hex` 逐字节比对 31 字�
 
 复现要花额度（本机这次约 141k input + 5.4k output tokens，价格由端点自己定），所以没进 `verify_all`
 的默认步骤 —— 它是 `--real-smoke` 那一档，需要凭据/额度时手工跑。
+
+## 8. 递归链路（多节点 + acceptance）实测（2026-10-18）
+
+§7 只有单节点，`acceptance` 一次都没跑。这一节把**整条递归链路**跑到底：root planner 拆出
+一个叶子 → 叶子 worker 真写文件 → verifier 独立复核 → **root 用 acceptance agent 验收组合结果**。
+三轮都跑在同一个便宜档（`deepseek-flash`），端点仍是本机 `127.0.0.1:15721` 上的
+OpenAI 兼容代理（`wire_api=responses`，不需要 key）。
+
+判据不看"我觉得跑通了"，看 `scripts/real_recursive_probe.py` 自己写出的 `summary.json`：
+
+| 字段 | 要求 |
+|---|---|
+| `ok` | `true` |
+| `root_status` | `done` |
+| `max_depth` | `>= 1`（真的拆过一层） |
+| `run_kinds` | 包含 `planner` / `worker` / `verifier` / **`acceptance`** |
+| `acceptance_run_count` | `>= 1`，且**必须是真实运行**（见 §8.5） |
+| `probe_files` | 非空（叶子真在目标仓库工作树里写出了文件） |
+| `debug_paths_ok` | `true`（每条真实运行都有 prompt / last-message / logs / workdir / 宪法哈希） |
+
+### 8.1 怎么跑的
+
+```powershell
+$env:CODEX_BATTLEFIELD_CODEX_HOME = "<隔离 codex home，model = deepseek-flash>"
+api\.venv\Scripts\python.exe scripts\real_recursive_probe.py `
+    --codex-bin "<npm 的 codex.cmd>" --model deepseek-flash --timeout 300
+```
+
+目标仓库是探针现建的临时 git 仓（`recursive-probe-targets/…`），数据库也是隔离的
+（`probe-dbs/…`）——**不碰开发机的 Codex 主配置，也不把树写进真实工程**。
+宪法生成用 `mock`（探针要验的是 planner / worker / verifier / acceptance 四层真实调用）。
+
+### 8.2 第 1 轮（00:42）：树一步都没走 —— 被我自己并发的另一个探针占满了槽位
+
+`summary.json`：`ok=false`、`root_status=queued`、`run_count=0`。
+事件里写得很清楚（不是静默失败）：
+
+```text
+scheduler.external_codex_slots_full:
+  {"external_codex_processes":1,"effective_codex_slots":1,"capacity":1, …}
+```
+
+原因不是程序缺陷，是**我同时跑了 §9 那个 provider 探针**：那个 codex 进程的命令行里带着
+本项目路径，于是被槽位记账当成"已占用的 battlefield agent"，而自动并发当时只给了 1 个槽位。
+这说明两件事：① 槽位记账是**准的**（它连我自己起的进程都数进去了）；② **同一台机器上不要
+并发跑两个真实探针**，否则第二个会抢不到槽位。本条按"失败要指名"的规矩记在这里。
+
+### 8.3 第 2 轮（00:43）：小模型把 JSON 写坏 → 被判 `blocked` → **树形状走偏**
+
+这一轮真的跑起来了，但子节点的 planner 交回的 `--output-last-message` 不是合法 JSON：
+
+```json
+{"decision":"execute", …, "verification_plan":"…证据。"},"block_report":null}
+```
+
+`json.loads` 在 **char 1042** 抛 `Extra data: line 1 column 1043`：对象已经闭合，后面又跟了
+一段。旧代码把这条失败当成 `decision=blocked`，于是：
+
+```text
+planner.decision: Codex planner output parse failed: Extra data: line 1 column 1043 (char 1042)
+planner.blocked_converted: 规划器返回 blocked，但节点目标非空 → 转成"递归指导"子任务
+```
+
+结果：`max_depth=2`、多出两个"递归指导 / skill-note"子节点、`probe_files` 为空、
+`root_status=waiting_children`、`ok=false`。
+
+**这条是本轮最有价值的失败样本**：小模型的问题不是"不会规划"，而是**结构漂移**
+（多写一个 `}`），而系统把它当成了"任务受阻"这种**语义结论**，于是一次解析失败污染了
+整棵树的形状。§3 的 `qwen3.8-flash` 也是同一类失败（顶层键写错），只是那次直接校验抛错、
+没有继续传播。
+
+### 8.4 修法一：结构漂移触发**一次自纠重试**（`api/app/runner.py` + `api/app/retry.py`）
+
+`_run_codex_io` 里，解析失败不再是"终局"，而是带着**可行动的反馈**重发一次：
+把解析错误原文 + "只输出一个 JSON 对象、不要代码块围栏、不要第二个对象"追加到提示词末尾
+（`retry.parse_failure_feedback`）。两条实现细节是有意的：
+
+* **反馈只出现在重发上**：第一次就写"上次输出不合法"是凭空指责（P2 钉住这条）；
+* **`*-prompt.txt` 记的是真正发出去的那一版**：否则事后复盘的依据是假的。
+
+判据 `api/tests/test_parse_failure_retry.py`（P1–P4）：
+
+| 用例 | 盯什么 |
+|---|---|
+| P1 | 第一次坏、第二次好 → `exit_code=0`，且提示词/日志里留下"重试反馈"与 `Extra data` |
+| P2 | 第一次的提示词里**没有**反馈块 |
+| P3 | `codex_retry_attempts=0` 时**不许**偷偷多跑一次，且报错原文留在 payload |
+| P4 | 一直坏下去有终点：跑满预算后返回失败，理由仍是解析错误 |
+
+变异（把重试分支改成 `if False and …`）：**P1/P2/P4 三条红**，P3 仍绿（它本来就是
+"配额被尊重"的对照）。恢复后 4 条全绿。
+
+### 8.5 修法二：探针只认**真实运行**（`scripts/real_recursive_probe.py`）
+
+第 2 轮的 `summary.json` 曾经报 `acceptance_run_count=2`、`run_kinds` 含 `acceptance`
+——**这是假证据**。编排器在"子节点没全 done"时会记一条 `_record_synthetic_run`
+（`kind=acceptance`、`status=succeeded`，但 `logs/prompt/last_message` 全空）。
+探针原来把 synthetic 也算成"acceptance 跑过"，于是**差点用一条合成记录去证明真跑过**。
+现在：`run_count` / `run_kinds` / `acceptance_run_count` / `debug_paths_ok` 只统计真实运行
+（三个路径都在），synthetic 单独计数（`synthetic_run_count`），且 `debug_paths_ok` 要求
+**至少有一条**真实运行。
+
+### 8.6 第 3 轮（00:47）：`ok = true`，8 次真实运行，含**真 acceptance**
+
+| 运行 | 节点 | 角色 | exit | input / cached / output tokens |
+|---|---|---|---|---|
+| 1 | root | planner | 0 | 19 995 / 15 360 / 2 043 |
+| 2 | 叶子 | planner | 0 | 20 218 / 15 360 / 714 |
+| 3 | 叶子 | worker | 0 | 187 956 / 169 088 / 8 792 |
+| 4 | 叶子 | verifier | 0 | 222 720 / 204 672 / 7 989 |
+| 5 | skill-note 子节点 | planner | 0 | 719 031 / 682 368 / 21 138 |
+| 6 | skill-note 子节点 | worker | 0 | 2 116 465 / 2 036 864 / 49 414 |
+| 7 | skill-note 子节点 | verifier | 0 | 358 163 / 331 776 / 6 254 |
+| 8 | **root** | **acceptance** | 0 | 270 724 / 232 192 / 11 021 |
+
+`summary.json`：`ok=true`、`root_status=done`、`max_depth=1`、3 个节点全 `done`、
+`run_count=8`、`synthetic_run_count=0`、`acceptance_run_count=1`、
+`debug_paths_ok=true`、`probe_files` 命中两个 worktree 里的
+`GAME_VERTICAL_SLICE_PROBE.md`。整链 **9 分 43 秒**（16:48:08 → 16:57:51 UTC），
+合计 **3 915 272 input（其中 3 687 680 命中缓存）/ 107 365 output** tokens。
+
+### 8.6.1 三轮复跑：修完之后 **3 / 3 全绿**
+
+同一命令连跑三轮（每轮自建目标仓与数据库，互不影响）：
+
+| 轮 | 开始（UTC） | 墙钟 | 真实运行 | 失败运行 | input / output tokens | `ok` |
+|---|---|---|---|---|---|---|
+| 1 | 16:48:08 | 9 分 43 秒 | 8 | 0 | 3 915 272 / 107 365 | `true` |
+| 2 | 16:58:36 | 15 分 35 秒 | 8 | 0 | 7 506 775 / 108 070 | `true` |
+| 3 | 17:14:41 | 11 分 02 秒 | 8 | 0 | 6 208 427 / 130 937 | `true` |
+
+三轮的 `run_kinds` 都含真实的 `acceptance`，`synthetic_run_count=0`、`probe_files` 非空。
+修之前的两轮是 **0 / 2 可用**（§8.2 并发抢占、§8.3 解析失败）；修之后 **3 / 3**。
+样本仍然小（n=3），所以本文只说"这三轮全绿"，不说"成功率达 100%"。
+
+顺带一条工程事实：同样的活，**input token 在 3.9M–7.5M 之间波动**（cached 命中率约 94%，
+总价由端点自己定）。慢变量不是模型本身，而是 skill-note 子节点里那次 worker 读了一堆上下文
+（第 2 轮仅它一个就吃了 2.1M input）。
+
+### 8.7 这一节**证明了**什么、**没证明**什么
+
+证明：
+
+* 便宜档（`deepseek-flash`）能把**四层角色**都跑过一遍：planner 在 root 与子节点上都给出
+  符合 schema 的决策，worker 真写出文件，verifier 独立复核，**acceptance agent 真实运行并
+  给出通过结论**；
+* 系统对"结构漂移"这类弱模型典型失败有了**自纠**路径（§8.4），而不是把它当语义结论传播；
+* 探针**不再用合成记录充当证据**（§8.5）。
+
+没证明（不要外推）：
+
+* **成功率只能说“修之后 3 / 3”**：修之前 0 / 2（§8.2 并发抢占、§8.3 解析失败），修之后 3 / 3（§8.6.1）；
+  n=3 不足以给百分比，而且三轮都是同一档模型、同一端点、同一任务形状。
+* **没有覆盖长跑/深层树**：`max_depth=1`，节点数 3（含 2 个编排器补的 skill-note 子节点），
+  `max_concurrency` 在真实链路上只到 2；
+* **金额仍未取到**：端点只在 `usage_json` 里回传 token，不回传费用（按规矩记 `null`，
+  不按单价推算）；
+* **验收质量没有独立判据**：`acceptance` 的 `verdict=pass` 是模型自己的结论，本文只证明
+  "它跑了、格式对、结论是 pass"，不证明"它的验收标准比 verifier 更严"。

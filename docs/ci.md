@@ -336,6 +336,23 @@ spending limit needs to be increased. Please check the 'Billing & plans' section
 
 额度恢复后第一件事仍是那个没答案的问题：**Linux 上 Python 组为什么跑不完**（上限已装好）。
 
+### 11.3 计费恢复后又验了一次：**仍然被挡**（2026-10-18 00:41）
+
+仓库所有者说已经充值，所以没直接相信：为一个 5 秒的作业专门开了一条一次性分支
+（只跑 `echo alive`，用完即删，计费约 0 分钟），**宁可浪费一次分支也不猜**：
+
+| 时间（UTC+8） | 运行 | 作业时长 | 结论 |
+|---|---|---|---|
+| 2026-10-17 21:02 | `run 39034905470`（提交 `14b0cd7`，4 个作业） | 3 秒 | 全部 `failure`，注解与 §11 逐字相同 |
+| 2026-10-18 00:41 | `run 39050477890`（探针分支，1 个作业） | 2 秒 | `failure`，注解逐字相同（`The job was not started because recent account payments have failed or your spending limit needs to be increased…`） |
+
+执行者只能拿到「这个仓的作业启动不了」这个结论，能改的只有 GitHub 账号侧：
+`Billing & plans → Actions` 的 **spending limit** 与付款方式，以及确认充值的是**这个账号 / 这个组织**。
+这不是仓库里任何文件能修的；在它解开之前，P6-2/P6-3 的「Linux 侧完整记录」依然拿不到。
+
+顺带一条可量化的事实：被账单挡住的运行**不占配额**（2–3 秒、零分钟），所以用
+「一次推送换一次结论」去探账单状态是便宜的 —— 但仍然只推**有内容的提交**，不为了探账单而刷提交。
+
 ## 12. 已知限制（如实写下）
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，

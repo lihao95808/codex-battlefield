@@ -272,6 +272,30 @@ def is_tool_internal_failure(text: str) -> bool:
     )
 
 
+def parse_failure_feedback(kind: str, error: str, *, limit: int = 600) -> str:
+    """上一次输出"不是单个合法 JSON 对象"时，追加到提示词末尾的自纠说明。
+
+    **为什么要重发一次**：这不是网络问题，也不是模型不会做，是**结构漂移**
+    （多一个 `}`、对象后面又跟了一段、Markdown 代码块包裹）。实测（2026-10-18，
+    `deepseek-flash` 走本机 OpenAI 兼容代理）：planner 的 `--output-last-message`
+    是 `…证据。"},"block_report":null}`，`json` 解析在 char 1042 抛 `Extra data`；
+    编排器把这条失败当成 `decision=blocked`，于是父节点被转成"递归指导"子任务，
+    整棵树的形状跟着走偏 —— 一次解析失败能污染整条链路。
+
+    反馈里必须**只**说这件可行动的事：错误原文 + "只输出一个 JSON 对象"。
+    不要在这条反馈里重复业务需求（提示词里已经有了，重复只会让上下文更长）。
+    """
+
+    reason = " ".join(str(error).split())[:limit]
+    return (
+        "\n\n--- 重试反馈：上一次输出不是合法 JSON ---\n"
+        f"角色：{kind}\n"
+        f"解析错误：{reason}\n"
+        "只输出一个 JSON 对象：不要 Markdown 代码块围栏，不要解释文字，"
+        "不要第二个对象；括号必须配对闭合，字符串里的引号必须转义。\n"
+    )
+
+
 def read_payload(output_path: Path, kind: str) -> dict:
     if not output_path.exists():
         return failure_payload(kind, "Codex 没有写出最终响应文件。")

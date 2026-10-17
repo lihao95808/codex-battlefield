@@ -143,24 +143,34 @@ async def run_probe(args: argparse.Namespace) -> int:
             root = db.get(TaskNode, root_id)
             runs = db.query(RunRecord).all()
             tasks = db.query(TaskNode).all()
-            run_kinds = {run.kind for run in runs}
+            # **只有真跑过的运行**才算证据：编排器在"子节点没全 done"或"有子节点阻塞"
+            # 时会记一条 `_record_synthetic_run`（kind=acceptance、status=succeeded、
+            # 但 logs/prompt/last_message 全是空的）。把它算进 `run_kinds` 与
+            # `acceptance_run_count` 会让"acceptance agent 跑过"这句话凭空成立 ——
+            # 实测（2026-10-18）就是这么把自己骗过去的：acceptance_run_count=2，
+            # 而两次都是 synthetic。
+            real_runs = [run for run in runs if run.logs_path and run.prompt_path and run.last_message_path]
+            synthetic_runs = [run for run in runs if run not in real_runs]
+            run_kinds = {run.kind for run in real_runs}
             probe_files = [
                 Path(task.worktree_path) / PROBE_FILE
                 for task in tasks
                 if task.worktree_path and (Path(task.worktree_path) / PROBE_FILE).exists()
             ]
-            debug_paths_ok = all(
+            debug_paths_ok = bool(real_runs) and all(
                 bool(run.prompt_path and run.last_message_path and run.logs_path and run.workdir and run.constitution_hash)
-                for run in runs
+                for run in real_runs
             )
-            acceptance_runs = [run for run in runs if run.kind == "acceptance" and run.status == "succeeded"]
+            acceptance_runs = [run for run in real_runs if run.kind == "acceptance" and run.status == "succeeded"]
             max_depth = max((task.depth for task in tasks), default=0)
             summary.update(
                 {
                     "root_id": root_id,
                     "root_status": root.status if root else None,
                     "run_kinds": sorted(run_kinds),
-                    "run_count": len(runs),
+                    "run_count": len(real_runs),
+                    "synthetic_run_count": len(synthetic_runs),
+                    "synthetic_run_kinds": sorted({run.kind for run in synthetic_runs}),
                     "debug_paths_ok": debug_paths_ok,
                     "probe_files": [str(path) for path in probe_files],
                     "acceptance_run_count": len(acceptance_runs),
