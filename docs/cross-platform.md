@@ -119,6 +119,9 @@ POSIX 上反斜杠是普通字符 → 迁移后的 worktree 路径变成 `…/wo
 
 ### 7.4 剩下 18 条红，逐类记账（没有一条影响 Linux 上的正常运行）
 
+> **2026-10-18 晚些时候：这 18 条已经全部处理完，Linux 侧现在是 0 红** ——
+> 见 §7.5。下面这张表保留下来，因为"当时红的是哪些、为什么红"本身就是证据。
+
 | 类别 | 条数 | 例子 | 性质 |
 |---|---|---|---|
 | **测试写成了 Windows-only，却没加平台守卫** | 5 | `test_watchdog_install_command_*`（产品明确"只有 Windows 支持"）、`test_l4_windows_candidates_*`、`test_project_binding::b1`（用 `Z:\…` 当"缺失目录"，POSIX 上它是相对路径）、`test_project_store::worktree_drive_comparison`（`Path.drive` 在 POSIX 恒为空） | 测试问题 |
@@ -133,6 +136,23 @@ POSIX 上反斜杠是普通字符 → 迁移后的 worktree 路径变成 `…/wo
 ubuntu 作业才有意义。
 
 **仍未验**：真 Linux CI（`ubuntu-latest`，账单解开之前拿不到）；macOS（本机没有）。
+
+### 7.5 清零：Linux 后端整套 **1729 通过 / 33 跳过 / 0 失败**（1 分 43 秒）
+
+处理方式分两类，**都写清了理由**（不是为了让绿而绿）：
+
+| 类别 | 做了什么 | 例子 |
+|---|---|---|
+| 产品明确只支持 Windows | 测试加 `skipif(sys.platform != "win32")` 并写明原因 | 看门狗安装命令（PowerShell + 计划任务）、`L4` 的 Windows 候选路径、盘符比较 |
+| 测试自己写成了 Windows 形状 | **改成跨平台**（首选），实在不行才 skip | `project_binding` 的"缺失目录"从 `Z:\…` 改成平台合法的绝对路径；`workspace_follows_project` 的 URL 比较两边先归一成 `/`；`runner_tools` 的逐字节比较改成**按行**比较（模板在 Windows 检出里是 CRLF，生成器写 LF） |
+| 需要 Windows 侧工具 | skip 并说明 | `provider_matrix` 的 M8（脚本内部调 pwsh）、`provider_wire_format`（POSIX 上从 `/mnt/c` 挑到 Windows 的 `codex` 转发器会 `Exec format error`） |
+| 跑法伪失败 | skip 并说明"CI 的 ext4 检出不会这样" | `public_tree_hygiene` H1/H3 在 `/mnt/…`（drvfs）上遍历超 90s |
+
+结果：**1729 passed, 33 skipped, 0 failed, 1min43s**（跳过数从 12 涨到 33，因为多了平台守卫 ——
+这是**诚实**的涨：那些用例在 Linux 上本来就不该跑）。
+同时整套耗时从 4 分 32 秒降到 1 分 43 秒（drvfs 上的两次全树扫描被跳过了）。
+
+**仍未验**：macOS（本机没有）；真 Linux CI（`ubuntu-latest`，等 GitHub 账单）。
 
 ## 5. 没做的（如实写下）
 

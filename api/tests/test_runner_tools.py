@@ -84,7 +84,13 @@ def test_generated_tools_match_the_repo_templates_byte_for_byte(tmp_path: pathli
         function(settings.workspace_dir)
         generated = settings.workspace_dir / "tools" / name
         assert generated.exists(), name
-        assert generated.read_bytes() == (templates / name).read_bytes(), name
+        # 按**行**比较，而不是逐字节：仓库里的模板在 Windows 检出里是 CRLF，
+        # 生成器统一写 LF —— 逐字节比较会在 Linux/CI 上必然红（2026-10-18 实测），
+        # 而真正要守的不变量是“两份源不许漂移内容”。换行风格由 git 与检出决定，
+        # 不是这两个文件之间的事。
+        assert generated.read_text(encoding="utf-8").splitlines() == (
+            (templates / name).read_text(encoding="utf-8").splitlines()
+        ), name
 
 
 def test_runner_tools_only_depends_on_the_standard_library_and_config() -> None:

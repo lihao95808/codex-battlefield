@@ -1914,6 +1914,10 @@ def test_production_database_drop_guard_allows_test_databases(tmp_path: Path):
     assert _should_block_destructive_sql(test_url, "DROP TABLE task_nodes") is False
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="看门狗钩子由 PowerShell 脚本 + 计划任务组成，产品明确只支持 Windows（见 docs/cross-platform.md）",
+)
 def test_watchdog_install_command_reserves_agent_start_budget(monkeypatch):
     settings = get_settings().__class__(
         mock_delay_seconds=0,
@@ -1955,6 +1959,10 @@ def test_watchdog_install_command_reserves_agent_start_budget(monkeypatch):
     assert captured["kwargs"]["timeout"] == 90
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="同上：看门狗安装命令只有 Windows 实现",
+)
 def test_watchdog_install_command_goal_mode_disables_agent_start_budget(monkeypatch):
     settings = get_settings().__class__(
         mock_delay_seconds=0,

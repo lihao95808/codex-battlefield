@@ -282,6 +282,10 @@ def test_m7_reports_null_when_codex_is_absent():
 # --- M8：报告里"验过"和"没验"分开列 -------------------------------------------
 
 
+@pytest.mark.skipif(
+    not (shutil.which("pwsh") or shutil.which("powershell")),
+    reason="这组跑的是真实脚本，它内部调 PowerShell 生成配置；没有 pwsh 就无法验",
+)
 def test_m8_report_separates_verified_from_unverified(tmp_path, capsys):
     """`--skip-binary-check` 时 `could_load_config` 必须是 null，而不是 true。
 
@@ -298,6 +302,10 @@ def test_m8_report_separates_verified_from_unverified(tmp_path, capsys):
         assert case["checks"]["could_load_config"] is None
 
 
+@pytest.mark.skipif(
+    not (shutil.which("pwsh") or shutil.which("powershell")),
+    reason="同上：需要 pwsh",
+)
 def test_m8_with_skip_flag_the_matrix_still_passes(monkeypatch, tmp_path, capsys):
     code = matrix.main(["--work-dir", str(tmp_path), "--skip-binary-check"])
     payload = json.loads(capsys.readouterr().out)
@@ -305,6 +313,10 @@ def test_m8_with_skip_flag_the_matrix_still_passes(monkeypatch, tmp_path, capsys
     assert payload["ok"] is True
 
 
+@pytest.mark.skipif(
+    not (shutil.which("pwsh") or shutil.which("powershell")),
+    reason="同上：需要 pwsh",
+)
 def test_m8_quiet_mode_still_reports_which_part_was_not_checked(capsys, tmp_path):
     """门禁日志用 `--quiet`；"没查 binary"必须出现在输出里，否则读日志的人会当成通过。"""
 
@@ -315,6 +327,10 @@ def test_m8_quiet_mode_still_reports_which_part_was_not_checked(capsys, tmp_path
     assert "OK" in out
 
 
+@pytest.mark.skipif(
+    not (shutil.which("pwsh") or shutil.which("powershell")),
+    reason="同上：需要 pwsh",
+)
 def test_m8_json_out_writes_full_report(tmp_path):
     target = tmp_path / "report.json"
     code = matrix.main(

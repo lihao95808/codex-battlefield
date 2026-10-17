@@ -65,7 +65,8 @@ JUDGEMENTS: dict[str, str] = {
     "P6-1": "`api/tests/test_container.py`（25 例，含 K9–K12）+ `test_container_static.py`（D1–D8）+ "
     "`scripts/verify_container_up.py`（运行期五条：compose 起来 / health / 界面 / 资产 / 非 root）+ "
     "`test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉）",
-    "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）",
+    "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）"
+    " + **Linux 实测记录**（`docs/cross-platform.md` §7：WSL Ubuntu 上后端整套 1729 通过 / 33 跳过 / 0 失败）",
     "P6-3": "`api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码）",
     "P6-4": "`scripts/probe_weak_model_planner.py`（planner 矩阵）+ `scripts/real_codex_smoke.py`（单节点完整链路）"
     " + `scripts/real_recursive_probe.py`（**多节点 + 真 acceptance**，`ok` 判据含 `acceptance_run_count` 与 "
@@ -112,7 +113,11 @@ GAP_REASONS: dict[str, str] = {
     "P6-1": "**运行期已验证**（2026-10-18，WSL Ubuntu 里的 Docker 29.1.3）：`scripts/verify_container_up.py` 五条判据全绿 —— compose 起得来、`/api/health` 200、`GET /` 200 且含 `id=\"root\"`、`/assets/*.js` 200 且不是 `text/html`、容器内 `id -u` = 10001。"
     "第一次真跑抓到五个缺陷（pnpm 允许列表键名不存在、该文件没进构建上下文、pnpm 12 vs CI 的 10、editable 安装早于源码 COPY、非 root 下 mkdir 老工作区导致 503），修法与证据在 `docs/container.md`，判据 K9–K12。"
     "**仍未验**：镜像推送/拉取、多架构、macOS 的 Docker Desktop。",
-    "P6-2": "本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过）",
+    "P6-2": "**Linux 运行期已验证**（2026-10-18，WSL Ubuntu 24.04 / Python 3.12）：后端整套 "
+    "**1729 通过 / 33 跳过 / 0 失败（1 分 43 秒）**；清零过程中抓到两处真缺陷（监督器的 killpg "
+    "因缺 start_new_session 而杀掉调用方；迁移重写 worktree 路径写死反斜杠）。"
+    "口径与逐类处理见 `docs/cross-platform.md` §7。**仍未验证**：macOS（本机没有）、真 Linux CI "
+    "（`ubuntu-latest`，等 GitHub 账单）。",
     "P6-3": "**Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），"
     "绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。"
     "**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文"
@@ -241,8 +246,8 @@ def render() -> str:
         "",
         "**P2–P5 的交付物都有判据，且判据在 `verify_all` 里跑。** P6 的五条里，",
         "两条（容器化 / 跨平台）**都已经真跑了**：容器在 WSL 的 Docker 里跑通（五条判据全绿、"
-        "顺手抓到五个只在真构建/真启动时暴露的缺陷），后端整套测试也在 WSL Ubuntu 上跑过"
-        "（修完两处 POSIX 缺陷后 1728 通过 / 18 失败 / 12 跳过，剩余 18 条都是测试侧或环境侧）。",
+        "顺手抓到五个只在真构建/真启动时暴露的缺陷）；后端整套测试也在 WSL Ubuntu 上跑通"
+        "（清零后 **1729 通过 / 33 跳过 / 0 失败**，过程中修掉两处 POSIX 真缺陷）。",
         "CI 那条**有了新证据**：拆组后 Windows 两个作业全绿、**Linux 前端侧第一次全绿**",
         "（`verify-web (ubuntu)` 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”；",
         "而且账号侧被账单挡住（2026-10-18 00:41 / 01:37 / 02:08 / 03:17 四次运行都是同一条注解），**Linux 侧完整记录仍拿不到**。",

@@ -84,7 +84,10 @@ def test_bound_project_moves_workspace_and_database(tmp_path: pathlib.Path, monk
 
     assert settings.layout.bound is True
     assert settings.workspace_dir == settings.layout.project_dir
-    assert str(settings.layout.project_dir) in settings.database_url.replace("/", "\\")
+    # 两边都先归一成 `/` 再比：`database_url` 走 `as_posix()`（永远 `/`），
+    # 而 `project_dir` 在 Windows 上是反斜杠。原写法把 URL 换成反斜杠去比 POSIX 路径，
+    # 在 Linux 上必然失败（2026-10-18 WSL 实测）。
+    assert str(settings.layout.project_dir).replace("\\", "/") in settings.database_url.replace("\\", "/")
     # 关键对照：不能再是老仓库 workspace
     assert settings.workspace_dir != WORKSPACE_DIR
 

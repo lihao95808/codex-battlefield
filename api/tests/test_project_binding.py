@@ -64,7 +64,16 @@ def test_b1_binding_a_missing_directory_is_refused(client: TestClient) -> None:
     而用户看到的是"绑定成功"。所以 API 层必须要求目录真实存在
     （CLI 仍允许"先绑后建"，那是另一个取舍）。
     """
-    response = client.post("/api/projects/bind", json={"path": "Z:\\definitely-not-here"})
+    # 路径必须是**这个平台上合法的绝对路径**：`Z:\\...` 在 POSIX 上会被当成相对路径，
+    # 那时 API 报的是"需要绝对路径"（另一个分支）—— 判据会因此测错东西。
+    import sys
+    import tempfile
+
+    if sys.platform == "win32":
+        missing = "Z:\\definitely-not-here"
+    else:
+        missing = str(pathlib.Path(tempfile.gettempdir()) / "definitely-not-here") 
+    response = client.post("/api/projects/bind", json={"path": missing})
     assert response.status_code == 400, response.text
     assert "不存在" in response.json()["detail"]
 

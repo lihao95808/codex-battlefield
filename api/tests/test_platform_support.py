@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import importlib.util
 import os
 import sys
@@ -104,6 +106,7 @@ def test_l3_python_executable_prefers_the_venv():
 # --- L4/L5 浏览器候选 --------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="这条判据只对 Windows 的候选路径有意义")
 def test_l4_windows_candidates_are_absolute_install_paths():
     candidates = ps.browser_candidates(windows=True)
     absolute = [item for item in candidates if os.path.isabs(item)]

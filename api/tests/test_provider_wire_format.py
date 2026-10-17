@@ -40,13 +40,22 @@ from app.orchestrator import Orchestrator
 from app.runner import CodexExecRunner
 from tests.fake_responses_gateway import FakeResponsesGateway
 
-CODEX = shutil.which("codex.cmd") or shutil.which("codex")
+# 平台各自的"真实 CLI"：POSIX 上如果挑到 Windows 的 `codex.cmd`（在 /mnt/c 的 PATH 里
+# 很常见），`create_subprocess_exec` 会得到 `Exec format error`，五条判据会一起红 ——
+# 那不是"协议不对"，是**挑错了可执行文件**（2026-10-18 在 WSL 上实测）。
+CODEX = (
+    (shutil.which("codex.cmd") or shutil.which("codex"))
+    if os.name == "nt"
+    else shutil.which("codex")
+)
 
 pytestmark = pytest.mark.skipif(
-    CODEX is None,
+    CODEX is None
+    or (os.name != "nt" and CODEX.startswith("/mnt/")),
     reason=(
-        "本机没有 codex CLI：这一组要通过**真实的 Codex CLI** 验『我们这一侧发什么』，"
-        "没有它就无从验证"
+        "本机没有可执行的 codex CLI：这一组要通过**真实的 Codex CLI** 验『我们这一侧发什么』；"
+        "在 POSIX 上如果 only 找到 /mnt/… 里的 Windows 转发器，执行会得到 Exec format error —— "
+        "那是挑错二进制，不是协议不对"
     ),
 )
 

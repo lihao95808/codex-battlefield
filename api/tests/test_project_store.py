@@ -14,6 +14,8 @@
 """
 from __future__ import annotations
 
+import sys
+
 import json
 import pathlib
 
@@ -200,6 +202,7 @@ def test_clear_active_makes_it_unbound(home: pathlib.Path, project_dir: pathlib.
 # ---------- 跨盘判定（spec §8） ----------
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="`Path.drive` 在 POSIX 上恒为空，没有“跨盘”这回事")
 def test_worktree_drive_comparison() -> None:
     assert project_store.worktree_drive_matches(pathlib.Path("D:/a/b"), pathlib.Path("D:/c")) is True
     assert project_store.worktree_drive_matches(pathlib.Path("C:/a"), pathlib.Path("D:/c")) is False
