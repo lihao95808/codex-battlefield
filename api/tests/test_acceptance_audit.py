@@ -333,6 +333,50 @@ def test_q13_api_paths_claimed_in_docs_are_routed() -> None:
     assert missing == {}, f"文档声称存在、但应用里没有的端点：{missing}"
 
 
+# --- Q14 文档里的环境变量必须真的被读 --------------------------------------
+#
+# 一条真实教训（2026-10-18 写这条判据之前）：第一版只扫 `.py`，于是
+# `CODEX_BATTLEFIELD_CHECKPOINT_GIT_ANCHOR` 被报成"文档写了、代码没有" —— 实际上它由
+# `scripts/battlefield_watchdog.ps1` 读（`$env:CODEX_BATTLEFIELD_CHECKPOINT_GIT_ANCHOR`）。
+# **扫描范围窄会制造假红**，而假红比漏检更快毁掉一条判据：看到一次误报之后，
+# 之后每次红都会被当成噪声。所以这里刻意把 py / ps1 / ts / yml 一起扫。
+
+
+def _implementation_files() -> list[Path]:
+    patterns = ("*.py", "*.ps1", "*.ts", "*.tsx", "*.mjs", "*.json", "*.yml", "*.yaml", "*.sh")
+    files: list[Path] = []
+    for base in ("api", "scripts", "web", ".github"):
+        for pattern in patterns:
+            files.extend(
+                path
+                for path in (REPO / base).rglob(pattern)
+                if not {"node_modules", ".venv", "dist"} & set(path.parts)
+            )
+    return files
+
+
+def test_q14_documented_environment_variables_exist() -> None:
+    env_re = re.compile(r"CODEX_BATTLEFIELD_[A-Z0-9_]+")
+    documented: dict[str, set[str]] = {}
+    for path in _doc_files():
+        for name in env_re.findall(path.read_text(encoding="utf-8")):
+            documented.setdefault(name, set()).add(path.name)
+    assert documented, "文档里一个环境变量都没提？那这条判据已经空转"
+
+    implemented: set[str] = set()
+    for path in _implementation_files():
+        try:
+            implemented.update(env_re.findall(path.read_text(encoding="utf-8", errors="replace")))
+        except OSError:
+            continue
+
+    missing = {name: sorted(where)[:3] for name, where in documented.items() if name not in implemented}
+    assert missing == {}, (
+        "这些环境变量只在文档里出现、没有任何实现文件读它们（写了也不会生效）："
+        f"{missing}"
+    )
+
+
 # --- Q5 双仓同步（有远端时才算） --------------------------------------------
 
 

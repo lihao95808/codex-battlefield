@@ -58,6 +58,13 @@ SKIP_DIRS = {
     "dist",
     "build",
     ".playwright",
+    # Playwright 的**运行产物**（gitignored）：失败时它会写 error-context.md / trace，
+    # 里面必然含本机绝对路径（C:\\Users\\<me>）与截图。
+    # 实测（2026-10-18）：一次 perf 用例失败之后，下一次门禁的 H3/H4 就红了 ——
+    # 原因是它扫到了上一轮留下的 web/test-results/.../error-context.md。
+    # 这是同一个道理：运行产物不是源码，扫它只会制造假命中。
+    "test-results",
+    "playwright-report",
     # **运行时状态根**（gitignored）。它会同时出现在两处：仓库根的 `workspace/`
     # 与 `api/workspace/`。里面必然含本机绝对路径与真实端点地址 —— 那是**运行产物**，
     # 不是要发布的源码；扫它只会制造假命中并掩盖真实命中。
