@@ -56,6 +56,13 @@
 8. [`spec-task-isolation.md`](spec-task-isolation.md) — **任务间隔离（R2）**：写边界/读边界/凭据面各靠什么、
    哪些做不到（如实列出），以及**推翻 R0 旧结论**的那次实测。读隔离靠的是 codex 沙箱（不是我们的代码），
    所以留了"升级 CLI 后重跑"的手工步骤。
+9. [`spec-state-project-decoupling.md`](spec-state-project-decoupling.md) — **状态与工程解耦**：
+   每工程状态放在 `<状态根>/projects/<key>/`，`active.json` 只记"当前绑定"；含迁移/回收与
+   "未绑定工程时的兜底"那条容易被误读的规则。
+10. [`spec-steward.md`](spec-steward.md) — **管家（常驻全局 agent）**：它看什么快照、能提哪些动作、
+    为什么第一版只读，以及主动汇报/推送的节流理由。
+11. [`spec-watchdog-steward.md`](spec-watchdog-steward.md) — **看门狗 × 管家的交接**：谁在什么条件下
+    认领、"人工介入中"怎么记账、以及为什么两侧都要先查账再动手（P4-3 双向可见性）。
 
 ## 想知道"现在到底做到了哪一步"
 

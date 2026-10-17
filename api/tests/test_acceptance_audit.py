@@ -377,6 +377,25 @@ def test_q14_documented_environment_variables_exist() -> None:
     )
 
 
+# --- Q15 docs/README.md 必须索引到每一份文档 --------------------------------
+#
+# 2026-10-18 扫出来的：`docs/` 有 35 份文档，索引里只链了 32 份 ——
+# 漏掉的三个是 `spec-state-project-decoupling.md` / `spec-steward.md` /
+# `spec-watchdog-steward.md`（都是被代码注释反复引用的那种"核心 spec"）。
+# 孤儿文档不会红、不会被读，只会在下一次"我看看有哪些文档"时不存在。
+
+
+def test_q15_every_doc_is_linked_from_the_index() -> None:
+    index = (REPO / "docs" / "README.md").read_text(encoding="utf-8")
+    linked = set(re.findall(r"\]\(([A-Za-z0-9_\-./]+\.md)\)", index))
+    linked |= set(re.findall(r"`([A-Za-z0-9_\-]+\.md)`", index))
+    existing = sorted(path.name for path in (REPO / "docs").glob("*.md") if path.name != "README.md")
+    orphans = [name for name in existing if name not in linked]
+    assert orphans == [], (
+        "这些文档没有被 docs/README.md 索引（读者找不到它们）：" f"{orphans}"
+    )
+
+
 # --- Q5 双仓同步（有远端时才算） --------------------------------------------
 
 
