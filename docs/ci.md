@@ -258,7 +258,7 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
 `useCallback` 缺依赖（4 条）、fast-refresh 只导出组件（6 条）、以及 Node 20 弃用提示。
 它们**不影响绿**，但"绿"不代表"干净" —— 记在这里，免得以后拿一句"CI 全绿"当"没有待办"。
 
-## 10. 已知限制（如实写下）
+## 10. Linux 侧：45 分钟也跑不完 → **拆组**（结构性减负）
 
 * **Linux 侧的阻塞点是"跑不完"，不是"跑错"**（本轮查清 + 结构性处置）：`run 38965425892` 的
   ubuntu 作业加了 `timeout-minutes: 30` 之后，check-run 注解第一次给出了明确原因 ——
@@ -291,6 +291,52 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
   是 W13 的并集核对把它逼出来的（改用 DOTALL 后 W9 才第一次真正看全 10 步）。
   这条值得单独记：**判据的覆盖率本身也会静默缩水**，而唯一能被发现的方式是让另一个判据
   去交叉核对它（"并集等于全集"就是这种交叉核对）。
+
+  **拆组之后的结果**（`run 38980051654` / commit `f172475`）：
+
+  | 作业 | 结果 | 耗时 |
+  |---|---|---|
+  | **verify-web (ubuntu)** | **success** | **2.5 分钟** ← 本会话**第一次 Linux CI 绿灯** |
+  | verify-python (windows) | success | 6.7 分钟 |
+  | verify-web (windows) | success | 9.1 分钟 |
+  | verify-python (ubuntu) | 45 分钟预算到点被收掉（实跑到 55 分钟） | 仍未跑完 |
+
+  也就是说：**拆组立刻换来 Linux 的前端半边全绿**（含 `pnpm build` + 真浏览器 E2E + 真后端），
+  而只剩一个反常点：**Python 组在 Linux 上 45 分钟没跑完，同一份在 Windows 上 6.7 分钟、
+  本机 83 秒** —— 不是"慢 2.8 倍"，是**有东西卡住**。而作业被掐掉时没有日志，
+  所以"哪条卡住"问不出来。处置：给每条用例装上上限（`pytest-timeout`，`--timeout=120`，
+  判据 `test_repo_gates.py::test_pytest_has_a_per_test_timeout` 钉住它），
+  下一次 Linux 运行里卡住的那条会**带着名字失败**。
+
+## 11. **CI 现在被账单挡住了**（2026-10-17，必须先解决才能继续拿 CI 证据）
+
+`run 38985269338`（commit `cdc185d`）**四个作业全部在 3 秒内失败**，check-run 注解原文：
+
+```text
+[failure] The job was not started because recent account payments have failed or your
+spending limit needs to be increased. Please check the 'Billing & plans' section in ...
+```
+
+也就是说：**不是代码问题，也不是工作流问题** —— 账号的 Actions 额度/账单需要仓库所有者处理。
+在它被解决之前，"Linux 侧第一次完整记录"这件事**无法取得**（P6-2/P6-3 的那半句仍然没有证据）。
+
+### 11.1 为什么会用光（这段是自我记账，不是甩锅）
+
+私有仓库的 Actions 分钟数是有配额的，而 **Windows runner 按 2 倍计费**。粗算一次完整运行：
+`verify-web (ubuntu) 2.5 + verify-python (ubuntu) 55（超时被收）+ (verify-python (windows) 6.7
++ verify-web (windows) 9.1) ×2` ≈ **90 分钟配额**；而我在几轮里**每轮推送多次**
+（每次推送都触发一整套 4 作业矩阵，且被 `cancel-in-progress` 掐掉的那套**照样计费**）。
+所以这个额度主要是被"推得勤"烧掉的，不是被某一次运行烧掉的。
+
+### 11.2 因此定的两条纪律
+
+1. **一轮只推一次**：改动攒齐、本机 `verify_all` 跑通之后再推。
+2. **CI 不是本机门禁的替代品**：本机 `verify_all` 每次都跑；CI 证明的是"在别的平台上也成立"。
+   按"能省就省"的节奏推，而不是"每改一行都推"。
+
+额度恢复后第一件事仍是那个没答案的问题：**Linux 上 Python 组为什么跑不完**（上限已装好）。
+
+## 12. 已知限制（如实写下）
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
   E2E 步 1 failed / 6 passed）—— 2 vCPU 的 runner 上首屏走不完 180 秒。判据因此在 `process.env.CI`
