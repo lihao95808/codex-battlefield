@@ -177,62 +177,79 @@ def test_d2_user_is_switched_after_the_privileged_setup():
 # --- D3 层缓存顺序 -----------------------------------------------------------
 
 
-def test_d3_dependency_manifests_are_copied_before_sources():
-    """依赖清单要先于源码拷进来，否则改一行代码就得重装依赖。
+def test_d3_the_install_layers_have_what_they_need():
+    """安装依赖的那一层，**必须已经有它需要的东西**（这条判据原先写反了）。
 
-    ⚠️ 这条判据第一版写错过，值得记下来：它找 `"pip install -e /app/api" in text`，
-    结果**先命中了 `COPY api/pyproject.toml` 那条** —— 于是判据变成"pip install 要在
-    清单拷贝之前"，当然红。正确的不变量是"**套件源码的那个 COPY 在所有 install 之后**"，
-    而且要按**指到 `/app/`** 来识别（清单那条指到 `/app/api/`，但源不同）。
+    ## 2026-10-18 的纠正：旧判据把"错误的设计"钉成了不变量
+
+    第一版写的是"依赖清单先于源码拷、且**套件源码的 COPY 必须排在所有 install 之后**"——
+    那是缓存优化的经验法则，看着很合理。但第一次真构建就证明它**不可能满足**：
+
+        COPY api/pyproject.toml /app/api/
+        RUN python -m pip install -e /app/api
+        → error: package directory 'app' does not exist
+
+    editable 安装要在构建时解析包结构，**没有 `app/` 目录就装不起来**；而镜像里必须是
+    editable（`app/config.py` 的 `ROOT_DIR` 从源码位置往上两级算，非 editable 会让它落到
+    site-packages，`_resolve_web_dist` 就找不到 `/app/web/dist`）。
+    也就是说：这条判据当时在**保护一个从没跑通过的设计**（`docker compose up` 一次都没成功过）。
+
+    现在钉的是真正的不变量：
+
+    1. **editable 后端安装**（`pip install -e`）之前必须有 `COPY api/`；
+    2. `pnpm install` 之前必须有 `pnpm-lock.yaml`（`--frozen-lockfile` 才有意义）；
+    3. 不允许出现两次"后端依赖安装"（两份依赖清单必然漂移）。
     """
 
     instructions = [text for _line, text in logical_instructions()]
-
     installs = [index for index, text in enumerate(instructions) if "pip install" in text or "pnpm install" in text]
     assert installs, "应当有装依赖的步骤（没有的话这条判据是空转的）"
 
-    def source_dir_of(text: str) -> str | None:
-        """`COPY <src> <dst>` 里的 `<src>`；不是 `COPY` 或没有源时返回 `None`。
+    def copy_sources(text: str) -> list[str]:
+        """`COPY <src>... <dst>` 里的**所有**源。
 
-        `COPY --from=web ...` 这种跨阶段拷贝不算"源码"。
+        ⚠️ 第一版只取了 `parts[1]`，而真实的那行是三条源：
+        `COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./`
+        —— 于是"lockfile 拷过没有"永远答 False。多源 COPY 是合法且这里必需的写法。
         """
 
         if not text.upper().startswith("COPY "):
-            return None
+            return []
         parts = text.split()
         if len(parts) < 3 or parts[1].startswith("--"):
-            return None
-        return parts[1]
+            return []
+        return parts[1:-1]
 
-    # "源码目录"的判别：源以 `/` 结尾（`COPY api/`、`COPY web/`）或源是目录级的 `scripts/`。
-    # 单个文件（`COPY api/pyproject.toml`）是清单，不算源码。
-    dir_copies = [
-        index
-        for index, text in enumerate(instructions)
-        if (source := source_dir_of(text)) is not None and source.endswith("/")
-    ]
-    assert dir_copies, "应当有拷贝源码目录的步骤"
+    copies = [(index, copy_sources(text)) for index, text in enumerate(instructions)]
 
-    # 前端依赖的安装排在**前端源码**之前（那是它自己的阶段，不该混进来比）。
-    web_sources = [index for index in dir_copies if instructions[index].split()[1].startswith("web/")]
-    backend_sources = [index for index in dir_copies if not instructions[index].split()[1].startswith("web/")]
-    assert backend_sources and web_sources
+    def first_index(predicate) -> int | None:
+        return next((index for index, sources in copies if any(predicate(source) for source in sources)), None)
 
-    assert min(backend_sources) > max(installs), (
-        "后端源码 COPY 必须排在所有 install 之后："
-        f"installs={installs} dir_copies={dir_copies}"
+    backend_dir = first_index(lambda source: source.startswith("api/") and source.endswith("/"))
+    pip_install = next((index for index in installs if "pip install" in instructions[index]), None)
+    assert backend_dir is not None and pip_install is not None
+    assert backend_dir < pip_install, (
+        "editable 安装（pip install -e）之前必须先把 `api/` 拷进来 —— "
+        "只拷 pyproject.toml 会报 `package directory 'app' does not exist`（2026-10-18 真构建时踩到）"
     )
-    # 前端源码要在**前端 install** 之后（`installs` 里最后一个排在它前面的那个）。
-    earlier = [index for index in installs if index < min(web_sources)]
-    assert earlier and min(web_sources) > earlier[-1], "前端源码 COPY 必须排在前端 install 之后"
 
-    # 清单要先来：`COPY api/pyproject.toml` 在 `COPY api/ /app/api/` 之前。
-    manifest = next(index for index, text in enumerate(instructions) if "api/pyproject.toml" in text)
-    api_sources = min(index for index in backend_sources if "api/" in instructions[index])
-    assert manifest < api_sources, "依赖清单要先于源码拷进来（否则缓存层白设）"
+    lockfile = first_index(lambda source: "pnpm-lock.yaml" in source)
+    pnpm_install = next((index for index in installs if "pnpm install" in instructions[index]), None)
+    assert lockfile is not None and pnpm_install is not None
+    assert lockfile < pnpm_install, "`--frozen-lockfile` 之前必须先把 pnpm-lock.yaml 拷进来"
+    # 允许列表：可以由镜像**生成**（`printf ... onlyBuiltDependencies`）也可以从仓库拷，
+    # 但必须在 `pnpm install` 之前就位。2026-10-18：仓库里那份用的是 pnpm 不认识的键名，
+    # 而镜像当时也没拷它 —— 于是 `docker compose up` 从来没跑通过。
+    text_all = "\n".join(instructions)
+    assert "onlyBuiltDependencies" in text_all, (
+        "pnpm 10 的 build-script 允许列表（onlyBuiltDependencies）没有出现在 Dockerfile 里"
+    )
+    assert text_all.find("onlyBuiltDependencies") < text_all.find("pnpm install"), (
+        "允许列表必须在 `pnpm install` 之前写出来（顺序反了等于没写）"
+    )
 
-
-# --- D4 版本锁定 -------------------------------------------------------------
+    backend_installs = [index for index in installs if "pip install" in instructions[index]]
+    assert len(backend_installs) == 1, f"后端依赖只该装一次（现在有 {len(backend_installs)} 处）"
 
 
 def test_d4_base_images_are_pinned_to_a_tag_not_latest():

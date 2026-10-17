@@ -29,11 +29,27 @@
 # ---------- 阶段 1：前端产物 ----------
 FROM node:20-bookworm-slim AS web
 WORKDIR /build
-# 先只拷锁文件与 package.json：依赖没变时这一层能命中缓存，
+# 先只拷锁文件、package.json 与 `pnpm-workspace.yaml`：依赖没变时这一层能命中缓存，
 # 而源码改动只让后面几步重跑。
+#
+# ⚠️ `pnpm-workspace.yaml` **必须**一起拷进来：pnpm 10 的"允许哪些依赖执行 build script"
+# （`onlyBuiltDependencies`）就在这个文件里。少了它，`pnpm install` 会以
+# `ERR_PNPM_IGNORED_BUILDS` 失败 —— 2026-10-18 第一次真构建时就是这么失败的
+# （也就是说这条 `docker compose up` 从来没跑通过）。
 COPY web/package.json web/pnpm-lock.yaml ./
+# pnpm 10 要求"哪些依赖可以执行 build script"显式写在 `pnpm-workspace.yaml` 里，
+# 不写就 `ERR_PNPM_IGNORED_BUILDS`。这份文件在镜像里**生成**而不是从仓库拷：
+# 仓库里那份是历史遗留（键名写错、对本地 pnpm 又不坏），改它会影响本地依赖状态哈希 ——
+# 2026-10-18 实测：改了它之后本地 `pnpm test` 反而因为重新评估 build script 而失败。
+RUN printf 'onlyBuiltDependencies:\n  - esbuild\n' > pnpm-workspace.yaml
 # `--frozen-lockfile` 在 CI 与镜像里都要：否则装出的是"当时最新的"而不是锁定的那套。
-RUN corepack enable && pnpm install --frozen-lockfile
+#
+# ⚠️ **pnpm 版本要显式钉在 CI 的同一个大版本**（CI：`pnpm/action-setup@v4` + `version: 10`）。
+# 只写 `corepack enable` 会拿到"当前最新"——2026-10-18 实测拿到的是 **pnpm 12.14.0**，
+# 而 12 的依赖 build script 策略又变了：即使 `pnpm-workspace.yaml` 里写了
+# `onlyBuiltDependencies: [esbuild]`，`pnpm install` 仍然以 `ERR_PNPM_IGNORED_BUILDS` 失败。
+# 结果是"镜像里构建不了、CI 里跑得好"——正是那种只有真跑一次才会发现的漂移。
+RUN corepack enable && corepack prepare pnpm@10 --activate && pnpm -v && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
@@ -50,6 +66,11 @@ ENV PYTHONUNBUFFERED=1 \
     # 状态根在容器内固定为 `/state`，由卷挂载；
     # 不设它的话会落到容器内的 `~/.codex-battlefield`，重建容器就丢。
     CODEX_BATTLEFIELD_STATE_HOME=/state \
+    # **必须**同时指定工作区：未绑定工程时 workspace_dir 会回退到老路径
+    # <repo>/workspace（= /app/workspace，属主是 root）——2026-10-18 真跑时
+    # 就是这里抛 PermissionError 让 API 起不来（/api/health 一直 503）。
+    # 容器里没有“仓库边上的工作区”这个概念，让它落在卷里才对。
+    CODEX_BATTLEFIELD_WORKSPACE=/state/workspace \
     # 容器里没有 Codex CLI，真实档必然失败 —— 默认 mock，让界面先跑起来。
     # 要用真实 runner 就显式覆盖这个环境变量并自己提供 CLI。
     CODEX_BATTLEFIELD_RUNNER=mock \
@@ -71,14 +92,19 @@ RUN useradd --create-home --uid 10001 battlefield \
 
 WORKDIR /app
 
-# 先装依赖（只拷清单），再拷源码 —— 同一套缓存思路。
-# `uvicorn[standard]` 已经在 `api/pyproject.toml` 的 `dependencies` 里，
-# 所以这里**不重复声明**：两份依赖清单会漂移，而漂移的表现是"镜像里版本与本地不同"。
-COPY api/pyproject.toml /app/api/
+# 后端：**必须先把源码拷进来再装**（这条以前是先拷 pyproject 再装，装不起来）。
+#
+# 为什么不能只拷 `pyproject.toml`：镜像里用的是 `pip install -e`（editable），
+# 而 editable 安装要在构建时解析包结构 —— 没有 `app/` 目录时 setuptools 直接报
+#   `error: package directory 'app' does not exist`
+# （2026-10-18 第一次真构建时就是这个错，说明"先拷清单再装"这套缓存优化从没被验证过）。
+#
+# 为什么必须是 editable：`app/config.py` 的 `ROOT_DIR` 是从源码位置往上两级算出来的，
+# 非 editable 安装会让它落到 site-packages 里，`_resolve_web_dist` 就找不到 `/app/web/dist`。
+COPY api/ /app/api/
 RUN python -m pip install --upgrade pip \
  && python -m pip install -e /app/api
 
-COPY api/ /app/api/
 COPY scripts/ /app/scripts/
 # 前端产物来自阶段 1。放在 `/app/web/dist`：`_resolve_web_dist` 会探
 # `ROOT_DIR/web/dist`，而 `ROOT_DIR` 是 `/app`（`api/app/config.py` 往上两级）。

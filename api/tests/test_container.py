@@ -263,3 +263,81 @@ def test_the_docs_explain_the_sandbox_difference() -> None:
     text = doc.read_text(encoding="utf-8")
     for topic in ("沙箱", "凭据", "卷"):
         assert topic in text, f"容器文档里没写清 {topic} 的差异"
+
+
+def test_k9_the_image_writes_the_pnpm_allowlist_before_installing(dockerfile: str) -> None:
+    """镜像里必须**生成** pnpm 10 的 build-script 允许列表，且排在 `pnpm install` 之前。
+
+    真事故（2026-10-18，WSL 里第一次真构建）：`pnpm install` 以 `ERR_PNPM_IGNORED_BUILDS`
+    失败 —— 而 `docker compose up` 在这之前**从来没跑通过**。两件事叠起来：
+    * 仓库里那份 `web/pnpm-workspace.yaml` 用的是 pnpm **不认识**的键名（"allow"+"Builds"），
+      文件在、字面像、就是不生效；
+    * `Dockerfile` 也没把它拷进镜像。
+
+    现在的做法是**镜像里生成**这份文件（`printf ... onlyBuiltDependencies`）：仓库那份保持原样，
+    因为改它会改变本地 `node_modules` 的状态哈希，进而让本地 `pnpm test` 重新评估
+    build script 而失败（同日实测）。
+    """
+
+    assert "onlyBuiltDependencies" in dockerfile, (
+        "镜像里没有写 pnpm 的允许列表 —— pnpm 10 会以 ERR_PNPM_IGNORED_BUILDS 失败"
+    )
+    allowlist_at = dockerfile.find("onlyBuiltDependencies")
+    install_at = dockerfile.find("pnpm install")
+    assert 0 < allowlist_at < install_at, (
+        "允许列表必须**先**写出来再 `pnpm install`（顺序反了等于没写）"
+    )
+
+
+def test_k10_the_image_pins_the_same_pnpm_major_as_ci(dockerfile: str) -> None:
+    """镜像里的 pnpm 必须与 CI 的**同一个大版本**。
+
+    事故：`corepack enable` 会拿"当前最新"——2026-10-18 拿到 pnpm **12.14.0**，而 CI 写的是
+    `version: 10`。pnpm 12 的依赖构建策略又变了：即使允许列表写对，`pnpm install` 仍然失败。
+    症状是"镜像里构建不了、CI 里跑得好"，而 CI 里永远发现不了它。
+    """
+
+    workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(encoding="utf-8")
+    ci = re.search(r"pnpm/action-setup@v4\s*\n\s*with:\s*\n\s*version:\s*'?(\d+)", workflow)
+    assert ci, "找不到 CI 里的 pnpm 版本声明"
+    pinned = re.search(r"corepack prepare pnpm@(\d+)", dockerfile)
+    assert pinned, "Dockerfile 没有钉 pnpm 版本（只写 corepack enable 会拿最新）"
+    assert pinned.group(1) == ci.group(1), (
+        f"CI 用 pnpm {ci.group(1)} 而镜像钉的是 {pinned.group(1)} —— 这种漂移只在真构建时暴露"
+    )
+
+
+def test_k11_an_unwritable_legacy_workspace_does_not_break_startup(monkeypatch, tmp_path) -> None:
+    """建不出"老工作区"**不能**让 API 起不来。
+
+    真事故（2026-10-18，容器里第一次真跑）：镜像以 uid 10001 运行、`/app` 属主是 root，
+    `get_settings()` 里那句 `WORKSPACE_DIR.mkdir()` 抛 `PermissionError: '/app/workspace'`
+    → uvicorn 直接起不来 → `/api/health` 一直 503。症状是"容器在跑、界面永远打不开"。
+
+    这里直接问那个被抽出来的函数：不可写的路径要**返回 False**而不是抛。
+    """
+
+    from app import config as config_module
+
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")  # 父级是普通文件 → mkdir 一定失败
+
+    assert config_module._ensure_legacy_workspace(blocker / "workspace") is False  # noqa: SLF001
+
+    ok_path = tmp_path / "writable"
+    assert config_module._ensure_legacy_workspace(ok_path) is True  # noqa: SLF001
+    assert (ok_path / "runs").is_dir() and (ok_path / "worktrees").is_dir()
+
+
+def test_k12_the_image_points_the_workspace_into_the_volume(dockerfile: str) -> None:
+    """容器里工作区必须落在卷（`/state`）内，而不是 `/app` 下。
+
+    未绑定工程时 `workspace_dir` 会回退到老路径 `<repo>/workspace`；容器里的 `<repo>`
+    就是 `/app`（root 所有）—— 这正是上一条事故的根。所以镜像必须显式给一个
+    `CODEX_BATTLEFIELD_WORKSPACE`，且它要在 `/state` 下。
+    """
+
+    match = re.search(r"CODEX_BATTLEFIELD_WORKSPACE=(\S+)", dockerfile)
+    assert match, "Dockerfile 没有设置 CODEX_BATTLEFIELD_WORKSPACE"
+    value = match.group(1).strip("\\")
+    assert value.startswith("/state"), f"工作区应当在卷里（/state 下），实际是 {value!r}"

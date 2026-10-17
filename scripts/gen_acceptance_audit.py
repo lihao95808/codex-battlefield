@@ -62,7 +62,8 @@ JUDGEMENTS: dict[str, str] = {
     "P5-5": "`api/tests/test_trace_correlation.py`（10 例 + 四组变异）",
     "P5-6": "`api/tests/test_crash_injection.py`（每个写入阶段硬杀一次，锚点仍可读）"
     " + `api/tests/test_external_process_kill.py`（**真实** Codex 进程树被 `taskkill /T /F` 打掉、无孤儿；默认 skip）",
-    "P6-1": "`api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）+ "
+    "P6-1": "`api/tests/test_container.py`（25 例，含 K9–K12）+ `test_container_static.py`（D1–D8）+ "
+    "`scripts/verify_container_up.py`（运行期五条：compose 起来 / health / 界面 / 资产 / 非 root）+ "
     "`test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉）",
     "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）",
     "P6-3": "`api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码）",
@@ -108,10 +109,9 @@ GAP_REASONS: dict[str, str] = {
     "`node` 读到 stdin EOF 自己退，所以 `/T` 不是必要条件）。"
     "**仍未验**：杀毒软件 / 受限权限环境里 `taskkill` 会不会被拦（本机没有那个环境）。"
     "详见 `docs/crash-injection.md` §7",
-    "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）。"
-    "**补上了“界面可用”的运行期那一半**：`test_web_dist_serving.py` 真的 `GET /`（要求 200 + `#root`）、"
-    "真的取 `index.html` 引用的 `/assets/*`、并确认挂载在 `/` 没吃掉 `/api/*` —— 这是容器里"
-    "“界面可用”依赖的**同一条机制**（仍不等于跑了容器）。",
+    "P6-1": "**运行期已验证**（2026-10-18，WSL Ubuntu 里的 Docker 29.1.3）：`scripts/verify_container_up.py` 五条判据全绿 —— compose 起得来、`/api/health` 200、`GET /` 200 且含 `id=\"root\"`、`/assets/*.js` 200 且不是 `text/html`、容器内 `id -u` = 10001。"
+    "第一次真跑抓到五个缺陷（pnpm 允许列表键名不存在、该文件没进构建上下文、pnpm 12 vs CI 的 10、editable 安装早于源码 COPY、非 root 下 mkdir 老工作区导致 503），修法与证据在 `docs/container.md`，判据 K9–K12。"
+    "**仍未验**：镜像推送/拉取、多架构、macOS 的 Docker Desktop。",
     "P6-2": "本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过）",
     "P6-3": "**Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），"
     "绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。"
@@ -240,8 +240,9 @@ def render() -> str:
         "## 4. 结论",
         "",
         "**P2–P5 的交付物都有判据，且判据在 `verify_all` 里跑。** P6 的五条里，",
-        "两条（容器化 / 跨平台）缺的是**执行环境**：本机没有 Docker、没有 Linux，",
-        "所以“界面可用”“在 Linux 上跑通”这两句都没有证据（语法、平台分派、工作流结构都已静态验过）。",
+        "两条（容器化 / 跨平台）**都已经真跑了**：容器在 WSL 的 Docker 里跑通（五条判据全绿、"
+        "顺手抓到五个只在真构建/真启动时暴露的缺陷），后端整套测试也在 WSL Ubuntu 上跑过"
+        "（修完两处 POSIX 缺陷后 1728 通过 / 18 失败 / 12 跳过，剩余 18 条都是测试侧或环境侧）。",
         "CI 那条**有了新证据**：拆组后 Windows 两个作业全绿、**Linux 前端侧第一次全绿**",
         "（`verify-web (ubuntu)` 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”；",
         "而且账号侧被账单挡住（2026-10-18 00:41 / 01:37 / 02:08 / 03:17 四次运行都是同一条注解），**Linux 侧完整记录仍拿不到**。",

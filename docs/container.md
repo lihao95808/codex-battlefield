@@ -1,7 +1,7 @@
 # 容器化（P6-1）
 
 实现：`Dockerfile`（多阶段）、`docker-compose.yml`、`.dockerignore`。
-判据：`api/tests/test_container.py`（21 例）。
+判据：`api/tests/test_container.py`（25 例，含 K9–K12 与运行期五条）。
 
 ```bash
 docker compose up --build
@@ -156,3 +156,40 @@ Linux 上容器内 UID 10001 与宿主机用户的 UID 不同，`git` 会报
    `COPY api/pyproject.toml` —— 判据变成"pip install 要在清单拷贝之前"，当然红。
    正确的不变量是"**套件源码目录的那个 COPY 在所有 install 之后**"，
    而且要按"源以 `/` 结尾"来区分目录拷贝与清单拷贝。
+
+
+## 运行期实测（2026-10-18，WSL 里的 Docker 29.1.3）
+
+这一节把本文档开头那句"`docker compose up` 一次都没跑过"改掉了。做法：本机 WSL2 的
+Ubuntu-24.04 里本来就有 Docker（我之前一直以为没有），于是第一次**真的**构建并起来：
+
+```bash
+# 在 WSL 里（宿主 8765 常被开发用的 uvicorn 占着，所以换宿主端口）
+python3 scripts/verify_container_up.py --host-port 18765
+```
+
+`scripts/verify_container_up.py` 把"界面可用"拆成**五条可断言的事**，全绿才算过：
+
+| 判据 | 实测结果 |
+|---|---|
+| `docker compose up` 起得来 | 容器 Started |
+| `/api/health` | 200 `{"status":"ok","frozen_mode":"false"}`（首次探到 503，1 秒后 200 —— 启动期正常） |
+| `GET /` 托管界面 | 200、`text/html`、920 字节、含 `id="root"` |
+| `/assets/index-pE16uxjJ.js` | 200、`text/javascript` |
+| 非 root | 容器内 `id -u` = **10001** |
+
+## 真跑一次抓到的四个缺陷（都只能靠真构建/真启动暴露）
+
+| # | 缺陷 | 症状 | 修法 |
+|---|---|---|---|
+| 1 | `web/pnpm-workspace.yaml` 里写的是**不存在的配置键**（"allow"+"Builds"） | 文件在、字面像、**完全不生效** | 改成 `onlyBuiltDependencies: [esbuild]` |
+| 2 | `Dockerfile` 没把 `pnpm-workspace.yaml` 带进镜像 | 允许列表进不了镜像 → `ERR_PNPM_IGNORED_BUILDS` | **在镜像里生成**这份文件（`printf ... onlyBuiltDependencies`）：仓库里那份保持原样 —— 改它会改本地 `node_modules` 的状态哈希，让本地 `pnpm test` 反而失败（同日实测） |
+| 3 | `corepack enable` 拿"当前最新" → 实测 **pnpm 12.14.0**，而 CI 钉的是 `version: 10` | pnpm 12 策略又变，允许列表写对也失败；"镜像里构建不了、CI 里跑得好" | `corepack prepare pnpm@10 --activate`，并加判据 K10 盯"与 CI 同大版本" |
+| 4 | `pip install -e /app/api` 在**只拷了 pyproject** 的层里执行 | `error: package directory 'app' does not exist` | 先 `COPY api/` 再装（editable 必须看到源码，且 `ROOT_DIR` 依赖源码位置） |
+| 5 | 运行时 `get_settings()` 无脑 `mkdir` 老工作区 `/app/workspace`（root 所有） | `PermissionError` → uvicorn 起不来 → `/api/health` 一直 503 | 抽成 `_ensure_legacy_workspace()`：失败只提示、不致命；镜像再显式 `CODEX_BATTLEFIELD_WORKSPACE=/state/workspace` |
+
+判据：`api/tests/test_container.py` 新增 **K9–K12**（允许列表键名与 COPY、pnpm 版本与 CI 对齐、
+老工作区不可写不致命、工作区必须落在卷里）。
+
+**仍未验**：镜像**推送/拉取**（本机没有 registry）；GPU/多架构（`--platform`）；
+macOS 上的 Docker Desktop。

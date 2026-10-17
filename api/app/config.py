@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -716,6 +717,25 @@ class Settings:
         return warnings
 
 
+def _ensure_legacy_workspace(legacy: Path) -> bool:
+    """建"老工作区"（P1 兼容路径）。**建不出来不算致命**，返回是否建成。
+
+    2026-10-18 在容器里第一次真跑时暴露：镜像以非 root（uid 10001）运行、`/app` 属主是 root，
+    这里抛 `PermissionError: '/app/workspace'` → uvicorn 起不来 → `/api/health` 一直 503。
+    老工作区在容器里并不参与运行（有效工作区在 `CODEX_BATTLEFIELD_WORKSPACE=/state/workspace`），
+    所以它失败只该是一条提示，不该是启动失败。
+    """
+
+    try:
+        legacy.mkdir(parents=True, exist_ok=True)
+        (legacy / "runs").mkdir(parents=True, exist_ok=True)
+        (legacy / "worktrees").mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"[config] 老工作区 {legacy} 不可写，跳过创建：{exc!r}", file=sys.stderr)
+        return False
+    return True
+
+
 def get_settings() -> Settings:
     """进程启动时**唯一**做状态目录创建的地方（不变量 L2）。
 
@@ -724,11 +744,20 @@ def get_settings() -> Settings:
     """
     # P1 阶段仍创建老工作区，**行为刻意不变**——P1 只引入抽象，
     # 让 StateLayout 可以被独立验证；切换实际路径是 P2 的事。
-    WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-    (WORKSPACE_DIR / "runs").mkdir(parents=True, exist_ok=True)
-    (WORKSPACE_DIR / "worktrees").mkdir(parents=True, exist_ok=True)
+    #
+    # ⚠️ 但"创建失败"不能是致命的（2026-10-18，容器里第一次真跑时暴露）：
+    # 镜像以非 root（uid 10001）运行、`/app` 属于 root，于是
+    # `WORKSPACE_DIR.mkdir()` 抛 `PermissionError: '/app/workspace'`，**整个 API 起不来**
+    # （`/api/health` 一直 503）。而老工作区在容器里根本不参与运行 —— 有效工作区在
+    # `/state`（`CODEX_BATTLEFIELD_STATE_HOME`）下。所以这里改成"尽力而为"：
+    # 建不出来就跳过，真正必须能建的是下面那份**有效**工作区。
+    _ensure_legacy_workspace(WORKSPACE_DIR)
 
     settings = Settings()
+    # 有效工作区必须能建：这是这台机器上真正会写运行记录/工作树的地方。
+    settings.workspace_dir.mkdir(parents=True, exist_ok=True)
+    (settings.workspace_dir / "runs").mkdir(parents=True, exist_ok=True)
+    (settings.workspace_dir / "worktrees").mkdir(parents=True, exist_ok=True)
     home = settings.state_home
     # 工程 key：显式环境变量优先；否则**读一次** `active.json` 定成启动快照。
     if not settings.project_key:
