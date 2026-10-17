@@ -109,9 +109,7 @@ assert "checkpoint.atomic_write_json(latest_path, payload)" in source   # ✅
 
 ## 6. 已知限制（如实写下）
 
-* **只覆盖了"还原锚点"这一层**。`taskkill` 打断整棵树的实时运行（真的起 Codex CLI、
-  跑到一半杀进程）没有做 —— 那需要真模型与真 CLI，成本高且不稳定。
-  真正被保护的是**落盘的那一份**：事务保证库的原子提交，本模块保证锚点的原子写。
+* **`taskkill` 那条已经补上了**（2026-10-18，§7）：对**真实** Codex 进程树（`cmd.exe → node → codex.exe`，7 个进程）实测 —— 杀完 5 秒内 0 个存活、被杀的调用带失败返回；把杀换成 no-op 的变异会红。默认 skip（会花额度），设 `CODEX_BATTLEFIELD_REAL_PROCESS_KILL=1` 才跑。**仍然没有**的是"杀毒软件/受限权限环境下 `taskkill` 会不会被拦"这一类环境差异（本机没有那个环境）。
 * **没有测"断电"**（真正的掉电无法在测试里模拟）。用 `os._exit` 模拟的是
   "进程立刻消失、不做任何清理"，这与断电对**文件系统缓冲**的影响不完全一样
   （掉电可能丢掉已 `write` 但未 `fsync` 的数据）。要真覆盖掉电需要 `fsync` 语义
@@ -121,3 +119,51 @@ assert "checkpoint.atomic_write_json(latest_path, payload)" in source   # ✅
   那是另一个量级的取舍（每次写快照都 fsync 会明显变慢），本次不做，如实记下。
 * `.backup` **只保留一份**（上一次成功的）。更早的历史由带时间戳的历史快照承载，
   而它受 P5-4 的保留窗口管辖。
+
+## 7. 补上"另一半"：对**真实** Codex 进程树的那一刀（2026-10-18）
+
+§6 把 `taskkill` 这条记为"没验"。现在补上了，判据在
+`api/tests/test_external_process_kill.py`（默认 **skip**，因为会真的调一次 Codex CLI；
+设 `CODEX_BATTLEFIELD_REAL_PROCESS_KILL=1` 才跑，skip 时把原因写在 skip 消息里）。
+
+### 7.1 为什么这件事不能只靠 mock
+
+真实 Codex 的进程形状是 **`cmd.exe`（npm 的 `.cmd` 转发器）→ `node` → `codex.exe`**，
+本机实测这一棵树有 **7 个进程**。只杀父进程会留下孤儿 `codex.exe`，而孤儿继续占 Codex 槽位 ——
+这正是本轮早些时候"树一步都走不动"的同一个故障面（事件
+`scheduler.external_codex_slots_full`）。所以"杀完没有孤儿"必须对着真实进程形状量。
+
+### 7.2 怎么验
+
+1. 用 `CodexExecRunner._run_codex_io` 起一次**真实**调用（隔离 cwd，`--cd` 指到临时目录）；
+2. 从 `asyncio.create_subprocess_exec` 出来的 `process.pid` 拿到父进程，用 WMI 展开整棵子树；
+3. **先断言这一棵此刻都活着**（否则"杀完都没了"可能只是它们自己跑完了）；
+4. 调产品自己的 `Orchestrator._stop_external_codex_process_tree(pid)`；
+5. 断言：`stopped=True`、5 秒内子树上每个 pid 都不在了、被杀的调用**带着失败返回**。
+
+提示词刻意要一个**长回答**（`reason` 至少 800 字），让进程在 3 秒时一定还在跑。
+
+### 7.3 结果
+
+| 项目 | 实测 |
+|---|---|
+| 进程树规模 | **7 个**（`cmd.exe` → `node` → `codex.exe` 链） |
+| 杀之前 | 7 个全部 `_alive()` |
+| `_stop_external_codex_process_tree` | `stopped=True`、`exit_code=0` |
+| 5 秒后存活 | **0 个** |
+| 被杀的调用 | `exit_code != 0`（关掉重试后） |
+| 用例耗时 | 11–14 秒 |
+
+### 7.4 变异（两次，结论不一样，都记下来）
+
+| 变异 | 结果 | 说明 |
+|---|---|---|
+| 把 `taskkill /T` 的 `/T` 去掉 | **仍然绿**（无孤儿） | 这个形状下 `/T` **不是必要条件**：父进程一死，`node` 读到 stdin EOF 自己退，`codex.exe` 跟着退。所以本用例证明的是**结果**（杀完无孤儿），不是"必须带 `/T`" —— 不要把它当成 `/T` 的判据 |
+| 把整段杀进程换成 `return {"stopped": True}`（no-op） | **红**：7 个进程全活着（失败信息里列出全部 pid） | 这条变异才是本用例真正的假阳性防线：杀不动就会当场红 |
+
+### 7.5 一条把断言写错过的实测（留着当教训）
+
+第一次跑时"被杀的调用必须带着失败回来"这条**红了**，但 `exit_code=0`、`output_tokens=2709` ——
+不是杀失败，而是 **runner 把"进程被杀"当成可重试失败，第 2 次尝试完整跑完了**。
+也就是说：**杀掉一次真实调用，默认行为是"自动重试一次"**，这本身是对的（用户网络抖动时同理），
+但验证"这一刀"必须先把 `codex_retry_attempts` 设成 0，否则量到的是重试而不是杀。

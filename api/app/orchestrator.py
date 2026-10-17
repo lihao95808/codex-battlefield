@@ -2037,7 +2037,21 @@ class Orchestrator:
     def _is_battlefield_agent_codex_command_line(self, command_line: str) -> bool:
         return runtime_logs.is_battlefield_agent_codex_command_line(command_line)
 
-    def _codex_slots_active(self, *, max_cache_age_seconds: float = 5.0) -> int:
+    def _codex_slots_active(self, *, max_cache_age_seconds: float = 20.0) -> int:
+        """给**看板/统计**用的槽位占用数。
+
+        `max_cache_age_seconds` 默认 **20 秒**（原先是 5 秒），这是一笔明码标价的取舍：
+
+        * 统计口径允许陈旧 20 秒 —— 它只影响看板上的一个数字；
+        * 但 **5 秒的 TTL 会把 WMI 扫描（每次 ~0.7 秒）拽回请求路径**：后台刷新是 15 秒一次，
+          于是每 15 秒里有一半时间缓存是"过期"的，`/api/tree` 就会同步扫一次。
+          实测（2026-10-18，同一条首屏判据）：TTFB `412ms`（缓存热）vs `979 / 1223ms`（命中扫描）。
+
+        **调度决策不吃这个陈旧度**：真正决定"能不能起 agent"的
+        `_hold_agent_start_for_external_codex_slots` 仍然用 `max_cache_age_seconds=0.5` 现场扫，
+        所以放宽这里只影响"看板数字晚 20 秒"，不影响"会不会起重了"。
+        """
+
         processes = self._external_codex_processes(max_cache_age_seconds=max_cache_age_seconds)
         process_task_ids = {str(item.get("task_id") or "") for item in processes if item.get("task_id")}
         pending_task_ids = self._pending_codex_slot_task_ids()

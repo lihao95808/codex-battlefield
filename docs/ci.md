@@ -345,6 +345,7 @@ spending limit needs to be increased. Please check the 'Billing & plans' section
 |---|---|---|---|
 | 2026-10-17 21:02 | `run 39034905470`（提交 `14b0cd7`，4 个作业） | 3 秒 | 全部 `failure`，注解与 §11 逐字相同 |
 | 2026-10-18 00:41 | `run 39050477890`（探针分支，1 个作业） | 2 秒 | `failure`，注解逐字相同（`The job was not started because recent account payments have failed or your spending limit needs to be increased…`） |
+| 2026-10-18 01:37 | `run 39054550942`（提交 `e74bc01`，4 个作业） | 3 秒 | 同上四个作业全部 `failure` —— **充值仍然没有生效** |
 
 执行者只能拿到「这个仓的作业启动不了」这个结论，能改的只有 GitHub 账号侧：
 `Billing & plans → Actions` 的 **spending limit** 与付款方式，以及确认充值的是**这个账号 / 这个组织**。

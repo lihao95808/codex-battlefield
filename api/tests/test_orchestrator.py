@@ -1013,7 +1013,11 @@ def test_codex_slots_active_uses_longer_observation_cache(monkeypatch, tmp_path:
     monkeypatch.setattr(orchestrator, "_external_codex_processes", fake_external)
 
     assert orchestrator._codex_slots_active() == 1
-    assert observed_cache_windows == [5.0]
+    # 2026-10-18：5 秒 → 20 秒。5 秒比后台刷新的 15 秒还短，于是每 15 秒里有一半时间缓存
+    # 过期、`/api/tree` 会同步再扫一次 WMI（实测 0.7 秒，首屏 TTFB 979–1132ms）。
+    # 放宽后只影响看板数字的陈旧度；调度决策那条仍用 0.5 秒窗口现场扫
+    # （`test_external_scan_staleness.py` 的 S1–S3 钉住这一点）。
+    assert observed_cache_windows == [20.0]
 
 
 def test_watchdog_state_tolerates_mixed_naive_and_aware_datetimes(tmp_path: Path):

@@ -56,7 +56,8 @@ JUDGEMENTS: dict[str, str] = {
     "P5-3": "`web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器）",
     "P5-4": "`api/tests/test_retention.py`（清理后仍能还原）",
     "P5-5": "`api/tests/test_trace_correlation.py`（10 例 + 四组变异）",
-    "P5-6": "`api/tests/test_crash_injection.py`（每个写入阶段硬杀一次）",
+    "P5-6": "`api/tests/test_crash_injection.py`（每个写入阶段硬杀一次，锚点仍可读）"
+    " + `api/tests/test_external_process_kill.py`（**真实** Codex 进程树被 `taskkill /T /F` 打掉、无孤儿；默认 skip）",
     "P6-1": "`api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）+ "
     "`test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉）",
     "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）",
@@ -70,16 +71,30 @@ JUDGEMENTS: dict[str, str] = {
 
 #: 缺口 → 缺什么。带"未验"字样的条目必须有这里的一条说明（没有就是审计自己的缺口）。
 GAP_REASONS: dict[str, str] = {
-    "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏本机已达标**：两连跑 "
-    "cold **1601 / 1891ms**（目标 < 2s），一路是量出来的 —— 侧栏重活改成“树到位再挂”（4406→3033ms）、"
+    "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 "
+    "**1601–2403ms** 之间摆（四次实测 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；"
+    "2026-10-18 那次 2403ms `meets_target=false`），"
+    "原因是取树正好落在“外部进程扫描缓存已过期”上（那 ~0.7s 又回到请求路径）—— "
+    "一路是量出来的 —— 侧栏重活改成“树到位再挂”（4406→3033ms）、"
     "cProfile 定住第一次 `get_tree` 的 0.895s 是 **PowerShell/WMI 全表扫进程**（缓存 TTL 2 秒）→ "
-    "换 WQL 服务端过滤（0.895→0.672s）+ **启动预热 + 后台每 1.5 秒刷新缓存** → 页面取树 TTFB "
-    "**1165→253–277ms**。判据三层：目标 2000ms、棘轮 6000ms、TTFB<700ms（回归钉子）。"
+    "换 WQL 服务端过滤（0.895→0.672s）+ **启动预热 + 后台每 15 秒刷新缓存** → 页面取树 TTFB "
+    "**1165→253–277ms**。稳定通过的是判据的三条钉子：棘轮 6000ms、TTFB<800ms、服务端 p50<650ms；"
+    "“目标 2000ms”只是 `meets_target` 的观测量。"
+    "**已修掉抖动源**（2026-10-18）：统计口径缓存 TTL **5 秒 → 20 秒**（`_codex_slots_active`），请求路径不再同步跑那次 ~0.7 秒的 WMI 扫描；调度决策仍用 0.5 秒窗口现场扫（`api/tests/test_external_scan_staleness.py` S1–S3，变异改回 5 秒 → S1 红）。改后两次复测：取树 **270–420ms**（原先会窜到 1385ms）、`cold` **1696 / 1236ms**（都达标）。"
     "**仍未验证**：慢机器/CI 上的首屏（CI 下跳过；2 vCPU runner 上千节点 >180s，量的是 runner 容量）。"
-    "下一步最大项是客户端渲染（长任务 ~0.9s，DOM 只有 400 节点）—— 见 `docs/scale-baseline.md` §5",
-    "P5-2": "长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”本机两连跑已达标**"
-    "（cold 1601 / 1891ms；同一判据此前 2.4–4.8s），判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外"
-    "还多了一条回归钉子（页面取树 TTFB < 700ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过）",
+    "见 `docs/scale-baseline.md` §5 ⑨⑩⑪",
+    "P5-2": "长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”不是一个稳定事实**"
+    "（本机四次 cold 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；棘轮 6000ms 与 TTFB<800ms 稳定通过），"
+    "判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外"
+    "还多了一条回归钉子（页面取树 TTFB < 800ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过）",
+    "P5-6": "**两个阶段都实测过了**：`api/tests/test_crash_injection.py` 在每个写入阶段硬杀一次进程，"
+    "还原锚点仍可读；`api/tests/test_external_process_kill.py`（默认 skip，`CODEX_BATTLEFIELD_REAL_PROCESS_KILL=1` 才跑）"
+    "对**真实** Codex 进程树（`cmd.exe → node → codex.exe`，实测 **7 个进程**）跑产品自己的 "
+    "`_stop_external_codex_process_tree`：5 秒内 **0 个存活**、被杀的调用带失败返回（关掉重试后）。"
+    "两次变异：换成 no-op → **红**（列出 7 个存活 pid）；去掉 `/T` → **仍绿**（该形状下父进程一死、"
+    "`node` 读到 stdin EOF 自己退，所以 `/T` 不是必要条件）。"
+    "**仍未验**：杀毒软件 / 受限权限环境里 `taskkill` 会不会被拦（本机没有那个环境）。"
+    "详见 `docs/crash-injection.md` §7",
     "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）。"
     "**补上了“界面可用”的运行期那一半**：`test_web_dist_serving.py` 真的 `GET /`（要求 200 + `#root`）、"
     "真的取 `index.html` 引用的 `/assets/*`、并确认挂载在 `/` 没吃掉 `/api/*` —— 这是容器里"
