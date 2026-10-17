@@ -127,6 +127,36 @@
 
   仍未达标（3.0s > 2s）。剩下的两个杠杆量得很清楚：**树自己的 TTFB 在负载下 760ms（空闲 240ms）**
   与**客户端渲染 ≈1.0–1.4s**（长任务合计 977ms）。
+
+  **⑥ 那 1 秒其实是"扫进程"，不是树 —— 用 profiler 定住了（本轮最有价值的发现）。**
+  现象：`get_tree` 的**第一次**调用 1066–1359ms，之后 133–226ms；连"静置 2.5 秒后"再量的
+  第一批也还是 `[1294, 272, 299]` —— 总是"第一次慢"。
+
+  `cProfile` 直接点名（1000 节点，全部 1.359 秒里）：
+
+  | 函数 | tottime | 说明 |
+  |---|---|---|
+  | `{method 'read' of '_io.TextIOWrapper'}` | **0.895s** | 一次**子进程 stdout** 的读取 |
+  | `{built-in method _winapi.CreateProcess}` | 0.031s | 起的那个进程 |
+  | `utils._text_quality_score` 等 | ~0.12s | 树自身的文本处理 |
+
+  顺着看代码：`get_tree` 第一步就是 `_sync_live_external_agent_statuses` →
+  `_external_codex_processes`，而它是 **PowerShell `Get-CimInstance Win32_Process`** 全表扫描，
+  **缓存 TTL 只有 2 秒**。于是：
+
+  * **树本身只要 ~150–250ms**（第 2–4 次调用的数字）；
+  * **首屏每次都替一个 2 秒过期的进程扫描付 ~1 秒**（页面静置超过 2 秒后再打开就会命中）；
+  * 而且这跟"1000 节点"没有关系 —— 空树一样要付。
+
+  这也解释了为什么"服务端静置采样"仍然是 `[1294, 272, 299]`：**不是负载，是缓存过期**。
+
+  **下一步（下一轮，两个候选，都需要单独的验证）**：
+  1. **把这笔开销挪出请求路径**：由后台按 ~1.5 秒刷新那份缓存（请求永远命中热的），
+     代价是后台一直在扫进程；
+  2. **换掉扫描本身**：`psutil.process_iter(['pid','cmdline'])`（本机未安装，需要加依赖）
+     保留"按 CommandLine 过滤"的语义，把 ~0.9 秒降到几十毫秒；`tasklist` 实测 418ms 但**丢掉
+     CommandLine**，会把无关的 codex 进程也算成"活跃槽位"，**不能**直接换。
+  两条都该配一条判据（"首屏那次 get_tree 不许付进程扫描"），否则以后又会悄悄退回去。
   **CI 上量不出来（已如实记下）**：`run 38965425892`（windows-latest）跑到这条时**整套用例超时**
   ——`apiRequestContext.get: Test timeout of 180000ms exceeded`，E2E 步 `1 failed / 6 passed`。
   也就是说在这台 2 vCPU 的 CI runner 上，千节点首屏**走不完 180 秒**。所以判据在 `process.env.CI`

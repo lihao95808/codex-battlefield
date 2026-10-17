@@ -206,6 +206,23 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
   })();
   const treeMetric = metricsRoutes.find((item) => String(item.key ?? '').includes('/api/tree')) ?? null;
 
+  // DOM 规模：画布上真的放了多少个节点/边？
+  // `virtualization.ts` 限的是"交给布局器的节点"（400），**不等于**渲染出来的 DOM 也少；
+  // 这两个数字一比就能看出渲染那一秒花在哪。
+  const domNodes = await page.locator('.react-flow__node').count();
+  const domEdges = await page.locator('.react-flow__edge').count();
+
+  // 静下来之后再量一次服务端：把"服务端本来就慢"和"被首屏并发压慢"分开。
+  // （上面的 samples 是紧接着首屏取的，那时侧栏那批请求还在飞。）
+  await page.waitForTimeout(2500);
+  const quietSamples: number[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const tick = Date.now();
+    const response = await page.request.get(`http://127.0.0.1:${API_PORT}/api/tree?root_id=${ROOT_ID}`);
+    quietSamples.push(Date.now() - tick);
+    expect(response.ok()).toBe(true);
+  }
+
   // 主线程账单：长任务次数、总计、最长一次（含前 8 条的起点/时长）。
   const longTasks = await page.evaluate(() => {
     const raw = (window as unknown as { __longTasks?: { start: number; duration: number }[] }).__longTasks ?? [];
@@ -233,6 +250,8 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
         warm_ms: warmMs,
         breakdown,
         server_tree_ms: { min: serverMs, samples },
+        server_tree_ms_quiet: { min: Math.min(...quietSamples), samples: quietSamples },
+        dom: { nodes: domNodes, edges: domEdges },
         server_metrics_tree: treeMetric,
         long_tasks: longTasks,
         target_ms: TARGET_MS,
@@ -253,6 +272,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     `[perf] 千节点首屏 cold=${coldMs}ms warm=${warmMs}ms（目标 ${TARGET_MS}ms，` +
       `棘轮 ${RATCHET_MS}ms，达标=${coldMs < TARGET_MS ? '是' : '否'}）` +
       `payload=${(payloadBytes / 1024).toFixed(0)}KB 服务端取树=${JSON.stringify(samples)}ms ` +
+      `服务端静置=${JSON.stringify(quietSamples)}ms DOM节点=${domNodes}/边=${domEdges} ` +
       `主线程长任务=${longTasks.count} 次/共 ${longTasks.total_ms}ms/最长 ${longTasks.longest_ms}ms ` +
       `服务端自报=${JSON.stringify(treeMetric)} ` +
       `拆解=${JSON.stringify(breakdown)}`,
