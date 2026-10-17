@@ -53,7 +53,8 @@ JUDGEMENTS: dict[str, str] = {
     "P4-5": "`api/tests/test_conclusions.py`（事实与判断分开；空段≠没有）",
     "P5-1": "`api/tests/test_metrics.py`（按路由模板记 p95 + 相对基线退化）",
     "P5-2": "`web/src/fileSize.test.ts`（棘轮，**预算表现在是空的**）+ `virtualization.test.ts`（13 例）+ `web/e2e/perf-first-screen.spec.ts`（千节点首屏实测）",
-    "P5-3": "`web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器）",
+    "P5-3": "`web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器）"
+    " + `scripts/verify_steward_real_turn.py`（**真实模型**一轮管家对话 → 风险分级 → 预授权闭环；默认不进 verify_all）",
     "P5-4": "`api/tests/test_retention.py`（清理后仍能还原）",
     "P5-5": "`api/tests/test_trace_correlation.py`（10 例 + 四组变异）",
     "P5-6": "`api/tests/test_crash_injection.py`（每个写入阶段硬杀一次，锚点仍可读）"

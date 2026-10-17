@@ -87,3 +87,40 @@
   后端支持 `targets`，界面还没做目标选择器 —— 那需要一个目标选择控件（P5-2 的前端拆分里一起做）。
 * 本模块只管"要不要逐次确认"，**不判断动作本身是否合理**。
   一个被批准的错误动作照样会执行 —— 那是审批人（你）的责任，不是这层的。
+
+## 8. 真实模型的闭环实测（2026-10-18，P5-3 的后半句）
+
+前面几节钉住的是**闸门本身**（判据 + 变异）。这一节补的是"**真模型的提议也会被同一套闸门管住**"——
+只用本地 mock 是证明不了这一点的，因为 mock 里的动作是人写的。
+
+脚本：`scripts/verify_steward_real_turn.py`（不是另写一套，调的是产品的
+`steward.build_context` → `runner.steward_chat`（**真实** Codex CLI）→ `steward.parse_chat`
+→ `steward_actions.propose` → `action_risk` 四段）。
+
+种子场景：临时库里一棵"根 + 一个 `blocked` 子节点"的树；问句是"根节点下面有个子节点一直是
+blocked，请直接给出可执行的动作"。一档便宜模型（`deepseek-flash`，本机 OpenAI 兼容端点）。
+
+| 项目 | 实测（`steward-real-20261018-021059`） |
+|---|---|
+| 真实调用 | `exit_code=0`、`confidence=high`、`needs_user_input=true` |
+| 它读出来的局面 | "唯一子节点因容量超时被 blocked 且可重试；**看门狗心跳过期 120881 秒**，当前无活跃 agent" |
+| 提议的动作 | `retry_node`（target=`steward-probe-child`，low，可预授权）、`kick_root`（target=根，low，可预授权） |
+| **没有预授权时** | 两条都落 `pending`（`result` 为空 —— 没执行过就是没执行过） |
+| **给了覆盖该动作+目标的预授权** | 同一动作落 `approved`，`result` 写成 `[预授权] 命中预授权（verify_steward_real_turn 授予，还剩 600s）。` |
+| **高风险（`cancel_all`）** | `can_pre_authorize=False`；`make_grant(actions=["cancel_all"])` **当场拒绝**："这些动作是高风险的，不允许被预授权" |
+| 判定 | `ok=true` |
+
+两条值得记的细节：
+
+* 模型给出的 `risk` 字段是**它自己的说法**，本脚本判定用的是 `action_risk.risk_of(action)`
+  （目录里的常量）—— 模型说了不算，这是 P4-4 的底线；
+* **执行一步故意没做**：`run_approved` 会把真实 Codex 拉起来，与"验证闸门"无关；
+  执行链路由 `api/tests/test_steward_actions.py` 覆盖，脚本里把这条写成了
+  `execute_skipped_reason`，不假装跑过。
+
+复现（要花额度，所以不进 `verify_all` 默认步骤）：
+
+```powershell
+$env:CODEX_BATTLEFIELD_CODEX_HOME = "<隔离 codex home>"
+api\.venv\Scripts\python.exe scripts\verify_steward_real_turn.py --model <便宜档> --timeout 180
+```

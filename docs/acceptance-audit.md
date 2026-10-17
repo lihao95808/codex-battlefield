@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `e74bc0153dd9591f049992fedccc0c333326a0d3`、内部仓 `5c4cd7ec863c4540717818431b3e051fa9e7d9fa`。
+审计时的两个远端 tip：公开仓 `69a64b57a4f06fc582b8b45f194d1f6471fd3581`、内部仓 `c65ce606a6726077b437c62ae793b19915d22eaf`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -36,7 +36,7 @@
 | P4-5 | 已落地 | `api/tests/test_conclusions.py`（事实与判断分开；空段≠没有） |
 | P5-1 | 已落地 | `api/tests/test_metrics.py`（按路由模板记 p95 + 相对基线退化） |
 | P5-2 | 已落地（有未验项） | `web/src/fileSize.test.ts`（棘轮，**预算表现在是空的**）+ `virtualization.test.ts`（13 例）+ `web/e2e/perf-first-screen.spec.ts`（千节点首屏实测） |
-| P5-3 | 已落地 | `web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器） |
+| P5-3 | 已落地 | `web/e2e/l4-flow.spec.ts`（6 例，真后端 + 真浏览器） + `scripts/verify_steward_real_turn.py`（**真实模型**一轮管家对话 → 风险分级 → 预授权闭环；默认不进 verify_all） |
 | P5-4 | 已落地 | `api/tests/test_retention.py`（清理后仍能还原） |
 | P5-5 | 已落地 | `api/tests/test_trace_correlation.py`（10 例 + 四组变异） |
 | P5-6 | 已落地（有未验项） | `api/tests/test_crash_injection.py`（每个写入阶段硬杀一次，锚点仍可读） + `api/tests/test_external_process_kill.py`（**真实** Codex 进程树被 `taskkill /T /F` 打掉、无孤儿；默认 skip） |
@@ -64,8 +64,8 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`e74bc0153dd9591f049992fedccc0c333326a0d3`（`origin/main`）
-* 内部仓：`5c4cd7ec863c4540717818431b3e051fa9e7d9fa`（`internal/main`）
+* 公开仓：`69a64b57a4f06fc582b8b45f194d1f6471fd3581`（`origin/main`）
+* 内部仓：`c65ce606a6726077b437c62ae793b19915d22eaf`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。
