@@ -138,7 +138,21 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
       tree_last_ms: tree.length ? Math.round(tree[tree.length - 1].duration) : null,
       // URL 必须记下来：只记"两次请求"会让人以为重复，而它们可能是两个不同的端点
       // （树 + 轮廓）—— 实测差点据此改错地方。
-      tree_urls: tree.map((item) => `${item.name.replace(/^https?:\/\/[^/]+/, '')} ${Math.round(item.duration)}ms`),
+      //
+      // `start_ms` / `wait_ms` 是这一轮新加的：它回答"请求是**何时发出**的、以及它在
+      // 自己身上花了多久"。若 `start_ms` 很大而请求本身只有几百毫秒，那 1.5 秒里的大头
+      // 就不是网络也不是服务端，而是**应用在拿到响应之前自己排的队**（可修的前端问题）；
+      // 反过来若 `start_ms` 很小而 duration 很大，那才该去查服务端/竞争。
+      tree_urls: tree.map((item) => {
+        const startMs = Math.round(item.startTime);
+        return {
+          url: item.name.replace(/^https?:\/\/[^/]+/, ''),
+          start_ms: startMs,
+          wait_ms: Math.round(item.responseStart - item.requestStart),
+          body_ms: Math.round(item.responseEnd - item.responseStart),
+          duration_ms: Math.round(item.duration),
+        };
+      }),
       script_requests: scripts.length,
       script_ms: Math.round(sum(scripts)),
     };
