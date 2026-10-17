@@ -269,6 +269,70 @@ def test_q11_the_documented_settings_count_matches_the_registry() -> None:
     )
 
 
+# --- Q12/Q13 文档里点名的文件与端点必须真实存在 ------------------------------
+#
+# 这两条防的是同一类腐坏：**文档指着不存在的东西**。
+# 2026-10-18 扫出来的量：文档里点名的仓库内文件 372 处、不存在的只有 4 处，
+# 而那 4 处都是**故意的**（扫描器的负样本、历史脚本名）—— 所以这里用一张
+# 带理由的允许表，而不是放宽成"随便写"。
+#
+# 允许表两头都要判：**表里的东西如果哪天真的存在了，也要红**（说明这张表已经过期）。
+
+#: 文档里点名、但**故意**不存在的路径 → 为什么允许。
+MISSING_BY_DESIGN: dict[str, str] = {
+    "docs/_leak_probe.md": "public-tree-hygiene 的负样本：扫描器要能抓到它（文件本身不该存在）",
+    "web/_browser_probe.mjs": "e2e-browser 文档里的临时探针示例，用完即删",
+    "scripts/battlefield-project.py": "spec 里记录的历史脚本名（已改名/并入别处），保留是为了追溯",
+    "scripts/project_key_reference.py": "同上：spec 记录的历史脚本名",
+}
+
+
+def _doc_files() -> list[Path]:
+    return [ROADMAP, *sorted((REPO / "docs").glob("*.md"))]
+
+
+def test_q12_repo_file_references_in_docs_exist() -> None:
+    pattern = re.compile(r"`((?:scripts|api|web|docs|schemas)/[A-Za-z0-9_\-./]+)`")
+    missing: dict[str, set[str]] = {}
+    for path in _doc_files():
+        for ref in pattern.findall(path.read_text(encoding="utf-8")):
+            if ref.endswith("/") or "*" in ref:
+                continue
+            if not (REPO / ref).exists():
+                missing.setdefault(ref, set()).add(path.name)
+
+    unexpected = sorted(set(missing) - set(MISSING_BY_DESIGN))
+    assert unexpected == [], (
+        "文档里点名了不存在的文件（要么补文件、要么把它写进 MISSING_BY_DESIGN 并说明理由）："
+        f"{[(item, sorted(missing[item])[:3]) for item in unexpected]}"
+    )
+    stale = sorted(ref for ref in MISSING_BY_DESIGN if (REPO / ref).exists())
+    assert stale == [], f"允许表里的路径现在真的存在了 —— 这张表过期了，删掉这些条目：{stale}"
+
+
+def test_q13_api_paths_claimed_in_docs_are_routed() -> None:
+    """文档里写的 `/api/...` 必须真的挂在 FastAPI 上（改名漏改文档时这里会红）。"""
+
+    from app.main import app
+
+    def normalize(path: str) -> str:
+        path = re.sub(r"\{[^}]*\}", "*", path)
+        path = re.sub(r"<[^>]*>", "*", path)
+        return path.rstrip("/") or "/"
+
+    routes = {
+        normalize(route.path) for route in app.routes if getattr(route, "path", "").startswith("/api")
+    }
+    claimed: dict[str, set[str]] = {}
+    for path in _doc_files():
+        for found in re.findall(r"`(/api/[A-Za-z0-9_\-/{}.<>]+)`", path.read_text(encoding="utf-8")):
+            claimed.setdefault(found, set()).add(path.name)
+    assert claimed, "文档里一个 /api 路径都没写？那这条判据已经空转"
+
+    missing = {item: sorted(where)[:3] for item, where in claimed.items() if normalize(item) not in routes}
+    assert missing == {}, f"文档声称存在、但应用里没有的端点：{missing}"
+
+
 # --- Q5 双仓同步（有远端时才算） --------------------------------------------
 
 
