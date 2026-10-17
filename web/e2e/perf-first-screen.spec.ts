@@ -176,6 +176,20 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
   });
   const warmMs = Date.now() - warmStarted;
 
+  // 两次页面加载**各自**那次取树的 TTFB。判据取两者的**较小值**：
+  // 后台扫描偶尔会与请求抢 GIL（实测孤点 ~1.1 秒），单次值会变成假失败；
+  // 而"修好了"时至少有一次是 ~250ms、"坏掉了"时两次都是 ~1.0–1.2 秒（见下面的阈值讨论）。
+  const warmTreeWait = await page.evaluate(() => {
+    const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+    const trees = entries.filter((item) => item.name.includes('/api/tree'));
+    const last = trees[trees.length - 1];
+    return last ? Math.round(last.responseStart - last.requestStart) : Number.NaN;
+  });
+  const coldTreeWait = Number(
+    (breakdown.tree_urls[0] as { wait_ms?: number } | undefined)?.wait_ms ?? Number.NaN,
+  );
+  const bestTreeWait = Math.min(coldTreeWait, Number(warmTreeWait));
+
   const tree = await page.request.get(`http://127.0.0.1:${API_PORT}/api/tree?root_id=${ROOT_ID}`);
   const payloadBytes = (await tree.body()).length;
 
@@ -283,18 +297,21 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     'utf-8',
   );
 
-  // **断言**：服务端自报的 `/api/tree` **p50** 不许回到"每次请求都替进程扫描买单"的水平。
+  // **断言**：页面取树的 TTFB 不许再替"外部进程扫描"买单。
   //
-  // 为什么用 p50 而不是"浏览器那一次请求的 TTFB"：后台刷新把扫描挪走之后，**偶尔**会有一次
-  // 请求与后台那次扫描抢 GIL（实测那是 1.1–1.2 秒的孤点，`very_quiet=[310,232,1229]`）——
-  // 拿单次值当门槛会把"偶发争用"变成假失败。而 p50 是这段窗口里的中位数：
-  // 修之前 **675–787ms**、修之后 **238–283ms**，分离清晰，也不会被孤点带偏。
-  const treeP50 = Number((treeMetric?.p50_ms as number | undefined) ?? Number.NaN);
+  // 阈值 800ms 是量出来的分离度：修好后两次加载的较小值 239–429ms（n=8，最坏 429），
+  // 把后台刷新关掉后 1032–1165ms（n=4，最好 1032）—— 800 在两者之间，两边余量都 >1.3 倍。
+  //
+  // ⚠️ 这条断言的第一版用的是"服务端自报 p50 < 500ms"，**变异测试证明它太弱**：
+  // 把后台刷新关掉之后 p50 仍然是 450ms（因为慢的只占 1/3），判据照样绿。
+  // 现在改成"两次加载里较好的一次 TTFB"，上面那个变异会红。
   expect(
-    treeP50,
-    `服务端自报 /api/tree 的 p50 是 ${treeP50}ms —— 看起来又替"外部进程扫描"买单了` +
-      `（后台刷新在 api/app/main.py 的 _external_process_scan_loop；数字见 ${ARTIFACT}）`,
-  ).toBeLessThan(500);
+    bestTreeWait,
+    `页面取树 TTFB 较好的一次也有 ${bestTreeWait}ms（cold=${coldTreeWait} warm=${warmTreeWait}）` +
+      ` —— 看起来又替"外部进程扫描"买单了（后台刷新在 api/app/main.py 的 _external_process_scan_loop）`,
+  ).toBeLessThan(800);
+  const serverP50 = Number((treeMetric?.p50_ms as number | undefined) ?? Number.NaN);
+  expect(serverP50, `服务端自报 /api/tree p50=${serverP50}ms`).toBeLessThan(650);
 
   // 把数字打出来：pytest 的 durations 之外，这条判据的"余量"要肉眼可见。
   console.log(
