@@ -184,6 +184,26 @@ config load when an unused `model_providers` entry still sets `wire_api = chat`"
 `Set-Item -Path "Env:$EnvKey" -Value $ApiKey`，会把用户 shell 里**已有的真实凭据覆盖成占位值**。
 现在只在变量不存在时才写。
 
+
+### 4.4 鉴权那一半：用**带鉴权的假网关**把"错的 key 会被拒"验掉（2026-10-18）
+
+真凭据能验的只有"厂商端点接不接受这把钥匙"；但在此之前有一半**不需要凭据**：
+**错的 key 会不会被拒、而且这一侧会不会把它报出来**。这条以前一直没验，现在由
+`api/tests/test_provider_wire_format.py` 的 **F5/F6** 钉住（假网关新增 `require_token`，
+不匹配就回 401）：
+
+| 用例 | 配置 | 判据 |
+|---|---|---|
+| **F5** | 网关要求 `good-token`，环境里放 `wrong-token` | 真实 Codex 调用 **`exit_code != 0`**，且日志里能看到 `401 / unauthorized / invalid api key`，并且网关记录里真的出现 `Bearer wrong-token` |
+| **F6** | 同一份配置，只把 key 换成 `good-token` | 调用 **`exit_code == 0`** |
+
+F5 与 F6 必须成对：单看 F5 会有盲区（"是不是只要网关要鉴权这一侧就一律失败"）。
+变异（把网关的校验改成 `return False`）→ **F5 立刻红**（`assert 0 != 0`：错 key 也成功了）。
+
+这条证明的是**失败方向**：401 不会被静默吞成"模型没有输出"。它**不**证明某家厂商云端端点
+的鉴权细节（签名、组织/项目头、IP 白名单等），那仍然只能由使用者在自己的端点上跑
+`scripts/verify_provider_planner.py`。
+
 ### 4.3 真实端点实测：**可达性跑通了，鉴权这条只验了一半**（2026-10-18）
 
 §4.0 用的是本机假网关（证明"端点契约"），这一节换**真实端点**：本机 `127.0.0.1:15721` 上的
@@ -217,11 +237,19 @@ OpenAI 兼容代理（`wire_api = "responses"`，配置里 `requires_openai_auth
 
 **本仓库验不了的**（不要在别处当成"已验证"）：
 
-* **端点是否可达**：脚本不发任何请求（**已另行实测一次**：见 §4.3 的正/负样本）；
-* **该端点能不能跑通 planner / worker / verifier**：要凭据、要花钱、端点要活着 ——
-  用 `scripts/verify_provider_planner.py`（一次 planner 调用）与
-  `scripts/real_codex_smoke.py`（完整链路），两者都只在你自己的环境里跑；
-* **鉴权是否被接受**：凭据不在仓库里，也不该在；§4.3 只证明了「不带 key 也能连通」，证不了「错的 key 会被拒」。
+* **某家厂商的云端端点**：本机没有那种凭据，也不打算为演示买一份 ——
+  用 `scripts/verify_provider_planner.py`（一次 planner 调用）或
+  `scripts/real_codex_smoke.py`（完整链路）在你自己的环境里跑；
+* **厂商特有的鉴权细节**（签名、组织/项目头、IP 白名单、按 key 计费的限额）：
+  §4.4 的 F5/F6 只证明了"错的 key 会被拒、而且会被看见"这条**通用**行为；
+* **真实端点的读法差异**（不同厂商在 SSE 细节/usage 字段上的偏差）：F1–F4 只钉住
+  我们这一侧发什么，以及一个**最小** Responses 子集够不够用。
+
+**已经验过的**（免得被上面三条误读成"什么都没验"）：
+
+* 端点**契约**（F1–F4，假网关 + 真实 CLI，离线）；
+* **可达性**正/负样本（§4.3：真实端点 15 秒成功、死端点撞硬超时）；
+* **鉴权的失败方向**（§4.4：错 key → 401 可见；对 key → 成功）。
 
 报告里的 `verified_here` / `not_verified_here` 两张清单就是这条边界的机器可读版本。
 

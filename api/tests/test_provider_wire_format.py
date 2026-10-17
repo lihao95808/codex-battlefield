@@ -368,3 +368,61 @@ def test_f4_dropping_the_provider_config_leaves_nothing_to_seed(tmp_path):
             "基座没有 `config.toml` 时不该凭空造一份 —— 那会让'配置从哪来'变得不可追"
         )
         assert not gateway.records, "没有配置就不该有任何出网请求"
+
+# --- F5 鉴权：**错的 key 会被拒、而且这一侧会把它报出来** -------------------------
+#
+# `docs/provider-matrix.md` 长期把"鉴权是否被接受"记成**未验**（要真凭据）。
+# 本机没有厂商凭据，但"错 key 会被拒 + 这一侧的失败方向不静默"这两件事可以用
+# **带鉴权的假网关**验 —— 它排除的是"我们发错了/我们静默吞了 401"这一类原因，
+# 剩下的才是"某家厂商端点特有的鉴权细节"，那一条仍然要有真凭据。
+
+
+def test_f5_a_wrong_key_gets_401_and_the_failure_is_visible(tmp_path):
+    """网关强制令牌；给错值 → 真实调用必须**失败**，并且日志里能看到 401。
+
+    为什么这条重要：如果 401 被这一侧静默吞掉（比如重试到超时、或者当成空输出），
+    用户看到的就是"模型什么都没说"，而真正的原因是凭据错了。
+    """
+
+    home = tmp_path / "codex-home"
+    with FakeResponsesGateway(require_token="good-token") as gateway:
+        _write_isolated_home(home, gateway.base_url, env_key="OPENAI_API_KEY", requires_openai_auth=False)
+        os.environ["OPENAI_API_KEY"] = "wrong-token"
+        try:
+            result = _run_one_planner(tmp_path, home)
+        finally:
+            os.environ.pop("OPENAI_API_KEY", None)
+
+        assert result["exit_code"] != 0, (
+            "错 key 竟然成功了 —— 说明假网关的鉴权没生效，或者这一侧根本没带凭据"
+        )
+        logs = _logs_tail(result, 6000).lower()
+        assert "401" in logs or "invalid api key" in logs or "unauthorized" in logs, (
+            "失败的日志里没有 401/unauthorized/invalid api key —— 401 被吞掉了，"
+            f"用户只会看到'没有输出'。日志尾巴：\n{_logs_tail(result)}"
+        )
+        seen = [item["headers"].get("authorization") for item in gateway.responses_requests()]
+        assert "Bearer wrong-token" in seen, (
+            f"网关收到的 Authorization 是 {seen!r} —— 凭据没发出去，这条判据就没证明'鉴权被拒'"
+        )
+
+
+def test_f6_the_same_call_succeeds_with_the_right_key(tmp_path):
+    """同一份配置、同一个端点，只把 key 换成对的 → 调用成功。
+
+    与 F5 成对：单看 F5 会有一个盲区 —— "是不是只要网关要求鉴权，这一侧就一律失败"。
+    """
+
+    home = tmp_path / "codex-home"
+    with FakeResponsesGateway(require_token="good-token") as gateway:
+        _write_isolated_home(home, gateway.base_url, env_key="OPENAI_API_KEY", requires_openai_auth=False)
+        os.environ["OPENAI_API_KEY"] = "good-token"
+        try:
+            result = _run_one_planner(tmp_path, home)
+        finally:
+            os.environ.pop("OPENAI_API_KEY", None)
+
+    assert result["exit_code"] == 0, (
+        "带正确 key 的调用没有成功 —— 这一侧在鉴权通过后仍然失败了。"
+        f"exit={result['exit_code']}\n--- 日志尾巴 ---\n{_logs_tail(result)}"
+    )

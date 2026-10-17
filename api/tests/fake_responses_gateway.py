@@ -61,8 +61,28 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(blob)
 
+    def _auth_rejection(self) -> bool:
+        """配了 `require_token` 时校验 `Authorization`；不通过就回 401 并返回 True。
+
+        为什么要这个旋钮：`docs/provider-matrix.md` 一直把"鉴权是否被接受"记为**未验**。
+        真实厂商端点要凭据才能验，但"**错的 key 会被拒、而且我们会看见**"这件事可以用本机
+        假网关验 —— 它证明的是**这一侧的失败方向**（不静默、不假装成功），
+        这正是 vendor 端点接不上时最想先排除的那一半。
+        """
+
+        required = getattr(self.server, "required_token", None)
+        if not required:
+            return False
+        got = (self.headers.get("authorization") or "").strip()
+        if got == f"Bearer {required}":
+            return False
+        self._respond({"error": {"message": "Invalid API key provided (fake gateway)", "type": "invalid_request_error"}}, status=401)
+        return True
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 的约定
         self._record(b"")
+        if self._auth_rejection():
+            return
         # 一些客户端会先探 `/v1/models` 做能力发现。
         self._respond({"object": "list", "data": [{"id": "fake-model", "object": "model"}]})
 
@@ -70,6 +90,8 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length") or 0)
         body = self.rfile.read(length) if length else b""
         self._record(body)
+        if self._auth_rejection():
+            return
         try:
             payload = json.loads(body.decode("utf-8", errors="replace") or "{}")
         except json.JSONDecodeError:
@@ -168,17 +190,23 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class FakeResponsesGateway:
-    """上下文管理器：`with FakeResponsesGateway() as gateway: ...`。"""
+    """上下文管理器：`with FakeResponsesGateway() as gateway: ...`。
 
-    def __init__(self) -> None:
+    `require_token` 非空时，网关**强制**校验 `Authorization: Bearer <token>`：
+    不匹配回 401。用来验"错的 key 会被拒、而且这一侧会把它报出来"（判据 F5/F6）。
+    """
+
+    def __init__(self, require_token: str | None = None) -> None:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self.require_token = require_token
         self.port = 0
         self.records: list[dict] = []
 
     def __enter__(self) -> "FakeResponsesGateway":
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self._server.records = self.records  # type: ignore[attr-defined]
+        self._server.required_token = self.require_token  # type: ignore[attr-defined]
         self.port = int(self._server.server_address[1])
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
