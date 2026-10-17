@@ -245,6 +245,30 @@ def test_q4_scale_first_screen_judgement_exists():
     assert "API_PORT" in text and "dist" in text, "这条判据必须量 API 托管的生产产物"
 
 
+# --- Q11 文档里的"数量"必须与代码一致 --------------------------------------
+#
+# 真实腐坏（2026-10-18 发现）：ROADMAP P2-2 写"设置面板 19 项"，而
+# `settings_registry.catalog()` 实际有 **27** 项 —— 这一年里加过模型/沙箱/预算三批设置，
+# 文档停在了最早那个数字上。这类"数字过期"不会让任何东西变红，
+# 却会让"面板有 19 项"这句话在评审时被当成事实引用。
+
+
+def test_q11_the_documented_settings_count_matches_the_registry() -> None:
+    import re
+
+    from app import settings_registry
+
+    row = next(line for item, line in roadmap_rows() if item == "P2-2")
+    match = re.search(r"\*\*(\d+) 项\*\*", row) or re.search(r"(\d+) 项", row)
+    assert match, f"P2-2 那行没有写设置项数：{row[:200]}"
+    documented = int(match.group(1))
+    actual = len(settings_registry.catalog())
+    assert documented == actual, (
+        f"ROADMAP 说设置面板有 {documented} 项，实际 `settings_registry.catalog()` 有 {actual} 项 ——"
+        " 加了设置却没更新文档，或文档写了不存在的项"
+    )
+
+
 # --- Q5 双仓同步（有远端时才算） --------------------------------------------
 
 
