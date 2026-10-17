@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `c5ed89b4dd13c56ca13f7a2063138921b48239f9`、内部仓 `f8ad6a23bd601ec200e48c16b2d98e9eb9a46e11`。
+审计时的两个远端 tip：公开仓 `26c325a3d7a792ce2b1f9b5b87cb42247cfd7e64`、内部仓 `201938997b317f5502da19f446236161f585a163`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -53,8 +53,8 @@
 
 | 交付物 | 缺什么 |
 |---|---|
-| P3-6 | 后端规模判据达标（1000 节点 130ms/640KB）；**前端首屏未达标**：真浏览器实测 cold 3.0–4.8s / warm 2.1–3.9s（目标 < 2s；**已修掉一个真瓶颈**：与树并发的两条侧栏重活`api/auto-policy` 1343ms、`api/watchdog/state` 1295ms 把树挤到 2.3s —— 改成“树到位再挂面板”后cold 4406→**3033ms**、树 TTFB 2324→**1167ms**）。**并用 cProfile 定住了那 1 秒的真正来源**：`get_tree` 第一次 1066–1359ms、之后 133–226ms，其中 **0.895s 是一次子进程 stdout 读取** —— `_sync_live_external_agent_statuses` → `_external_codex_processes` 用 PowerShell `Get-CimInstance Win32_Process` 全表扫描，**缓存 TTL 只有 2 秒**；**树本身只要 ~150–250ms**，跟节点数无关。下一步二选一（都要配判据）：把扫描挪出请求路径（后台刷新），或换成 `psutil`（本机未装、需加依赖；`tasklist` 418ms 但会丢掉 CommandLine，**不能**直接换）。判据里留了目标值与 6s 棘轮（只防变慢），下一步线索：首屏重复取树**已修**（判据拆解 `tree_requests` 2→1）但**没换来速度** ——瓶颈是客户端处理 567KB（同一次请求浏览器侧 2178ms vs Node 侧 230ms）、服务端在跑 orchestrator 时同一棵树 0.2–2.3s（单元判据 130ms）；**渲染与 TTFB 都单独量了**：主线程长任务 6 次 / 共 786–1025ms /最长 289–355ms，而树请求 `start_ms=436 / wait_ms=1430 / body_ms=12` —— **瓶颈是服务端对 1000 节点 `/api/tree` 的首字节延迟（0.25–1.5s 且抖动）**，客户端处理（~0.8s）第二；下一步读 `/api/metrics` 的路由 p95 把“编排循环抢 CPU/库锁”与“handler 本身重”分开。**CI 上量不出**：Windows CI 跑这条时整套用例超时（>180s），判据在 CI 下跳过并写明原因 —— 见 `docs/scale-baseline.md` §5 |
-| P5-2 | 长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”**已实测**未达标**（cold 2.4–4.8s，最好的一次 2422ms），判据 `web/e2e/perf-first-screen.spec.ts` 目前只保证不变慢 |
+| P3-6 | 后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏本机已达标**：两连跑 cold **1601 / 1891ms**（目标 < 2s），一路是量出来的 —— 侧栏重活改成“树到位再挂”（4406→3033ms）、cProfile 定住第一次 `get_tree` 的 0.895s 是 **PowerShell/WMI 全表扫进程**（缓存 TTL 2 秒）→ 换 WQL 服务端过滤（0.895→0.672s）+ **启动预热 + 后台每 1.5 秒刷新缓存** → 页面取树 TTFB **1165→253–277ms**。判据三层：目标 2000ms、棘轮 6000ms、TTFB<700ms（回归钉子）。**仍未验证**：慢机器/CI 上的首屏（CI 下跳过；2 vCPU runner 上千节点 >180s，量的是 runner 容量）。下一步最大项是客户端渲染（长任务 ~0.9s，DOM 只有 400 节点）—— 见 `docs/scale-baseline.md` §5 |
+| P5-2 | 长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”本机两连跑已达标**（cold 1601 / 1891ms；同一判据此前 2.4–4.8s），判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外还多了一条回归钉子（页面取树 TTFB < 700ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过） |
 | P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过） |
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
 | P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文`The job has exceeded the maximum execution time of 30m0s`，把预算提到 **45 分钟**再跑（run 38973770051 / commit 8d48868）—— Windows 侧 **16.4 分钟 success**（连续第三次全绿），ubuntu 侧 **>44.9 分钟仍没跑完**。**已做结构性处置**：`verify_all --group {python,web}` 把同一套门禁拆成两个并行作业（W13 盯着“并集等于全部步骤、两组不重叠、两个作业各自覆盖双平台”），顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
@@ -63,8 +63,8 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`c5ed89b4dd13c56ca13f7a2063138921b48239f9`（`origin/main`）
-* 内部仓：`f8ad6a23bd601ec200e48c16b2d98e9eb9a46e11`（`internal/main`）
+* 公开仓：`26c325a3d7a792ce2b1f9b5b87cb42247cfd7e64`（`origin/main`）
+* 内部仓：`201938997b317f5502da19f446236161f585a163`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。

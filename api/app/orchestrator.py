@@ -1438,6 +1438,20 @@ class Orchestrator:
             if process.get("task_id") and process.get("status")
         }
 
+    def refresh_external_codex_process_cache(self) -> int:
+        """**主动**刷新"外部 codex 进程"缓存，返回这次扫到几条。
+
+        为什么需要它（2026-10-17 实测，干净的对照）：服务端**彻底安静**之后（页面加载完 6.5 秒、
+        侧栏那批请求早已结束）第一次 `/api/tree` 仍然要 **1196ms**，紧接着两次只要 233/241ms ——
+        这正是 `_external_codex_processes` 的缓存（TTL 2 秒）过期后、下一次调用**同步**去跑
+        PowerShell/WMI 扫描的签名（cProfile 里那段 `TextIOWrapper.read` 是 0.672–0.895 秒）。
+
+        所以由 API 进程的后台任务每 1.5 秒调一次这里，让请求永远命中热缓存。
+        非 Windows 上 `_external_codex_processes` 直接返回空表（不缓存），因此这是零代价的。
+        """
+
+        return len(self._external_codex_processes(max_cache_age_seconds=0))
+
     def _sync_live_external_agent_statuses(
         self,
         *,

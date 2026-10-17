@@ -86,9 +86,16 @@ from .schemas import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    scan_task: asyncio.Task[None] | None = None
     if not orchestrator.settings.frozen_mode:
         orchestrator.recover_stale_agent_statuses()
         orchestrator.schedule_hibernation_wakeups()
+        # **启动时先热一次**：否则"服务器刚起来、后台循环还没跑到第一个 tick"的那几秒里，
+        # 第一个请求仍然要同步付那次进程扫描（实测：页面在启动后 ~1 秒打开时，
+        # 树请求 TTFB 1165ms；循环跑起来之后是 231ms）。启动慢 ~0.7 秒不是用户可感的延迟，
+        # 而"第一个用户的第一个请求慢 1 秒"是。
+        await asyncio.to_thread(orchestrator.refresh_external_codex_process_cache)
+        scan_task = asyncio.create_task(_external_process_scan_loop())
     proactive_task = asyncio.create_task(_steward_proactive_loop())
     try:
         yield
@@ -96,6 +103,36 @@ async def lifespan(_app: FastAPI):
         proactive_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await proactive_task
+        if scan_task is not None:
+            scan_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await scan_task
+
+
+#: 外部 Codex 进程扫描的**后台刷新间隔**（秒）。
+#:
+#: 必须小于 `_external_codex_processes` 的缓存 TTL（2 秒）—— 否则请求还是会撞上过期那一刻。
+#: 依据（2026-10-17 干净的对照实验）：服务端彻底安静之后第一次 `/api/tree` 要 **1196ms**、
+#: 紧接着两次只要 233/241ms；那段差额就是"缓存过期 → 同步跑一次 PowerShell/WMI 扫描"。
+EXTERNAL_PROCESS_SCAN_REFRESH_SECONDS = 1.5
+
+
+async def _external_process_scan_loop() -> None:
+    """后台保持"外部 codex 进程"缓存是热的（见上面常量的依据）。
+
+    独立后台任务、而不是在请求里"先返回旧的、顺带触发刷新"：后者在**第一次**请求（没有旧值）
+    时仍然要等扫描。这份数据是观测值，晚 1.5 秒完全够用。
+    扫描本身放 `to_thread`：它是同步子进程调用，不能占住事件循环。
+    """
+
+    while True:
+        try:
+            await asyncio.to_thread(orchestrator.refresh_external_codex_process_cache)
+        except Exception:
+            # 扫描是尽力而为：失败不该让后台任务死掉（`_external_codex_processes` 自己会记
+            # `_external_codex_process_scan_failed`，界面据此显示"扫不到"而不是"没有"）。
+            pass
+        await asyncio.sleep(EXTERNAL_PROCESS_SCAN_REFRESH_SECONDS)
 
 
 # 主动汇报的评估间隔（秒）。比推送流的间隔**长得多**：推送只是"界面上多一行"，

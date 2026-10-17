@@ -223,6 +223,21 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     expect(response.ok()).toBe(true);
   }
 
+  // **更久之后**再量一次（这一批是上一轮加的对照组，用来分开两个解释）：
+  //   1) "被侧栏那批请求挤慢" —— 那 2.5 秒的 `quietSamples` 就够了；
+  //   2) "进程扫描缓存（TTL 2 秒）过期" —— 只有**彻底安静**（这一批）才会命中，
+  //      因为 2.5 秒那批自己也把缓存刷热了一部分。
+  // 两批一起看才分得清：若 very_quiet 的第一次仍然慢，那就是缓存/扫描；若它快了，
+  // 那 quiet 那批的慢就只是并发。
+  await page.waitForTimeout(4000);
+  const veryQuietSamples: number[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const tick = Date.now();
+    const response = await page.request.get(`http://127.0.0.1:${API_PORT}/api/tree?root_id=${ROOT_ID}`);
+    veryQuietSamples.push(Date.now() - tick);
+    expect(response.ok()).toBe(true);
+  }
+
   // 主线程账单：长任务次数、总计、最长一次（含前 8 条的起点/时长）。
   const longTasks = await page.evaluate(() => {
     const raw = (window as unknown as { __longTasks?: { start: number; duration: number }[] }).__longTasks ?? [];
@@ -251,6 +266,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
         breakdown,
         server_tree_ms: { min: serverMs, samples },
         server_tree_ms_quiet: { min: Math.min(...quietSamples), samples: quietSamples },
+        server_tree_ms_very_quiet: { min: Math.min(...veryQuietSamples), samples: veryQuietSamples },
         dom: { nodes: domNodes, edges: domEdges },
         server_metrics_tree: treeMetric,
         long_tasks: longTasks,
@@ -267,12 +283,25 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     'utf-8',
   );
 
+  // **断言**：服务端自报的 `/api/tree` **p50** 不许回到"每次请求都替进程扫描买单"的水平。
+  //
+  // 为什么用 p50 而不是"浏览器那一次请求的 TTFB"：后台刷新把扫描挪走之后，**偶尔**会有一次
+  // 请求与后台那次扫描抢 GIL（实测那是 1.1–1.2 秒的孤点，`very_quiet=[310,232,1229]`）——
+  // 拿单次值当门槛会把"偶发争用"变成假失败。而 p50 是这段窗口里的中位数：
+  // 修之前 **675–787ms**、修之后 **238–283ms**，分离清晰，也不会被孤点带偏。
+  const treeP50 = Number((treeMetric?.p50_ms as number | undefined) ?? Number.NaN);
+  expect(
+    treeP50,
+    `服务端自报 /api/tree 的 p50 是 ${treeP50}ms —— 看起来又替"外部进程扫描"买单了` +
+      `（后台刷新在 api/app/main.py 的 _external_process_scan_loop；数字见 ${ARTIFACT}）`,
+  ).toBeLessThan(500);
+
   // 把数字打出来：pytest 的 durations 之外，这条判据的"余量"要肉眼可见。
   console.log(
     `[perf] 千节点首屏 cold=${coldMs}ms warm=${warmMs}ms（目标 ${TARGET_MS}ms，` +
       `棘轮 ${RATCHET_MS}ms，达标=${coldMs < TARGET_MS ? '是' : '否'}）` +
       `payload=${(payloadBytes / 1024).toFixed(0)}KB 服务端取树=${JSON.stringify(samples)}ms ` +
-      `服务端静置=${JSON.stringify(quietSamples)}ms DOM节点=${domNodes}/边=${domEdges} ` +
+      `服务端静置=${JSON.stringify(quietSamples)}ms 服务端久静=${JSON.stringify(veryQuietSamples)}ms DOM节点=${domNodes}/边=${domEdges} ` +
       `主线程长任务=${longTasks.count} 次/共 ${longTasks.total_ms}ms/最长 ${longTasks.longest_ms}ms ` +
       `服务端自报=${JSON.stringify(treeMetric)} ` +
       `拆解=${JSON.stringify(breakdown)}`,
