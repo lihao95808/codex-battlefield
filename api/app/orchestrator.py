@@ -1431,7 +1431,16 @@ class Orchestrator:
             db.commit()
         return len(tasks) + recovered_external
 
-    def _live_external_agent_statuses_by_task_id(self, max_cache_age_seconds: float = 2.0) -> dict[str, str]:
+    def _live_external_agent_statuses_by_task_id(self, max_cache_age_seconds: float = 20.0) -> dict[str, str]:
+        """请求路径读"外部 codex 进程"状态；**允许陈旧 20 秒**。
+
+        为什么从 2 秒放宽到 20 秒（2026-10-17 实测）：这份数据的唯一来源是
+        PowerShell/WMI 的一次全表扫描（0.2–0.9 秒），而它在 `get_tree` 的第一步。
+        2 秒的 TTL 意味着"页面静置 2 秒后再打开"必然同步付一次扫描（实测 845ms 首次 /
+        122ms 之后）。后台刷新（`main._external_process_scan_loop`）每 15 秒一次、
+        TTL 20 秒 —— 于是请求**总是命中热缓存**，而代价是"外部进程状态最多晚 ~15–20 秒"。
+        这份数据是观测值，晚十几秒完全够用；两害相权，这个方向是对的。
+        """
         return {
             str(process.get("task_id") or ""): str(process.get("status") or "")
             for process in self._external_codex_processes(max_cache_age_seconds=max_cache_age_seconds)

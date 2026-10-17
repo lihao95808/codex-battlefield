@@ -193,6 +193,22 @@
   `psutil` 那条候选仍然留着（本机索引里没有，装不上 → 无法验证）：它能把剩下那 0.67 秒
   也拿掉，让"后台刷新"这件事彻底不再需要。
 
+  **⑨ 进一步：那次扫描**每次都**要 ~700ms，后台刷新的 tick 自己会把并发请求拖慢 ~900ms。**
+  直接在 venv 里量：`_codex_process_rows()` 连跑三次 **693 / 736 / 704 ms**（`rows=0`、
+  `scan_failed=False`）—— 也就是说它不是"冷启动一次"，而是**每次都要 0.7 秒**（PowerShell 起 +
+  WMI 查）。于是后台循环的每一个 tick 都会和并发请求抢 CPU：
+  活服务（uvicorn，15 秒 cadence）实测 `/api/tree` 的服务端耗时为
+  **956 / 188 / 208 / 888 / 183 ms** —— 慢的那些正好落在 tick 上。
+  同一棵树在没有后台扫描的进程里只要 **121–122 ms**（探针：`get_tree` 845ms 首次 / 122ms 之后；
+  pydantic 校验 2–3ms、`jsonable_encoder` 20–49ms、`json.dumps` 2–3ms）。
+
+  所以这一轮把 cadence 从 **1.5 秒 → 15 秒**、请求路径可接受的陈旧度 **2 秒 → 20 秒**
+  （`main.EXTERNAL_PROCESS_SCAN_REFRESH_SECONDS` / `orchestrator._live_external_agent_statuses_by_task_id`）。
+  **这是一笔明码标价的取舍**：外部 codex 进程状态最多晚 ~15–20 秒同步；换来的是
+  "每 1.5 秒一次的争用" 降到 "每 15 秒一次"（实测慢请求从"多数"变成"约 1/5"）。
+  **真正的解**仍然是让扫描本身便宜（`psutil`，本机索引里装不上 → 仍无法验证），
+  或者把扫描放到**另一个进程**里跑（它的 CPU 就不会和 uvicorn 抢）。
+
   **⑧ 回头给"客户端渲染 0.9 秒"做了一次 CPU profile —— 结论要往下修一格。**
   用 CDP `Profiler` 给首屏采样（4.5 秒窗口）：
 

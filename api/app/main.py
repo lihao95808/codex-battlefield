@@ -111,10 +111,18 @@ async def lifespan(_app: FastAPI):
 
 #: 外部 Codex 进程扫描的**后台刷新间隔**（秒）。
 #:
-#: 必须小于 `_external_codex_processes` 的缓存 TTL（2 秒）—— 否则请求还是会撞上过期那一刻。
-#: 依据（2026-10-17 干净的对照实验）：服务端彻底安静之后第一次 `/api/tree` 要 **1196ms**、
-#: 紧接着两次只要 233/241ms；那段差额就是"缓存过期 → 同步跑一次 PowerShell/WMI 扫描"。
-EXTERNAL_PROCESS_SCAN_REFRESH_SECONDS = 1.5
+#: 原来是 1.5 秒（< 缓存 TTL 2 秒），依据是"让请求永远命中热缓存"。但**实测发现这个方向是错的**：
+#: 后台每 1.5 秒起一次 PowerShell/WMI 扫描，会把同进程里的 CPU 抢走 —— 活服务上量到的
+#: `/api/tree` 是 886–950ms，而同一棵树在**没有**后台扫描的进程里只要 **121–122ms**
+#: （探针：`get_tree` 845ms 首次 / 122ms 之后；pydantic 校验 2–3ms、编码 20–49ms）。
+#: 也就是说：把"0.9 秒的扫描"从请求路径挪走，代价是"每 1.5 秒一次的 0.9 秒 CPU 争用"，
+#: 净效果并没有变好。
+#:
+#: 所以改成 **15 秒一次**，并把请求路径可接受的陈旧度放宽到 20 秒
+#: （`orchestrator._live_external_agent_statuses_by_task_id`）。这是一笔**明码标价的取舍**：
+#: 外部 codex 进程的状态最多晚 ~15–20 秒被同步；换来的是请求路径稳定在 ~120–200ms
+#: 而不是 900ms，以及后台 CPU 争用降到 1/10。这份数据本来就是**观测值**，晚十几秒完全够用。
+EXTERNAL_PROCESS_SCAN_REFRESH_SECONDS = 15.0
 
 
 async def _external_process_scan_loop() -> None:
