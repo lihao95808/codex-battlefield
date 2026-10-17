@@ -174,6 +174,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="运行 Codex Battlefield 全套验证。")
     parser.add_argument("--real-smoke", action="store_true", help="额外运行真实 Codex CLI 文件修改烟测。")
     parser.add_argument("--real-recursive-probe", action="store_true", help="额外运行真实 Codex CLI 递归链路探针。")
+    parser.add_argument(
+        "--real-steward",
+        action="store_true",
+        help="额外用真实模型跑一轮管家对话，验证“提议 → 风险分级 → 预授权”闭环。",
+    )
     parser.add_argument("--real-constitution", action="store_true", help="真实 smoke 的宪法生成也使用真实 Codex。")
     parser.add_argument("--codex-bin", default="codex", help="Codex CLI 可执行文件。")
     parser.add_argument("--model", default="", help="真实 Codex CLI 使用的模型；默认留空，使用 Codex CLI 普通默认档。")
@@ -306,6 +311,17 @@ def main() -> None:
         if args.real_constitution:
             probe_command.extend(["--constitution-runner", "real"])
         run_step("真实 Codex CLI 递归链路探针", probe_command, ROOT)
+
+    if args.real_steward:
+        steward_command = [
+            sys.executable,
+            str(ROOT / "scripts" / "verify_steward_real_turn.py"),
+            "--timeout",
+            str(args.timeout),
+        ]
+        if args.model:
+            steward_command.extend(["--model", args.model])
+        run_step("真实模型管家对话 + 预授权闭环", steward_command, ROOT)
 
     print("\n全部请求的验证已通过。")
 

@@ -308,6 +308,16 @@ Windows 全绿的 check-run 上还挂着 11 条 `warning`，全部来自前端 l
   判据 `test_repo_gates.py::test_pytest_has_a_per_test_timeout` 钉住它），
   下一次 Linux 运行里卡住的那条会**带着名字失败**。
 
+  ⚠️ 两个后来才查清的细节（别再当成"日志丢了"的 bug）：
+
+  * 那次 ubuntu 作业的结论是 **`cancelled`**（55 分钟时被下一次推送的
+    `concurrency: cancel-in-progress` 掐掉），**不是** `timed_out`；
+  * 被取消的作业，GitHub 的日志端点返回
+    `{"Code":"BlobNotFound"}`（2026-10-18 实测，`GET /actions/jobs/<id>/logs` 跟着 302 到签名地址后
+    拿到的就是这个 215 字节的 XML）。**所以"没有日志"是取消的后果，不是下载姿势错了** ——
+    要么等它自己撞 45 分钟上限（那时会有日志与本条注解），要么在跑的时候拉。
+
+
 ## 11. **CI 现在被账单挡住了**（2026-10-17，必须先解决才能继续拿 CI 证据）
 
 `run 38985269338`（commit `cdc185d`）**四个作业全部在 3 秒内失败**，check-run 注解原文：
