@@ -107,11 +107,62 @@ planner 的单次金额：**没量到就不写**。
   `scripts/probe_model_cost.py`（用量/费用，**取不到记 null，不推算**）。
   端点还没确认通不通时，先用 `scripts/probe_responses_endpoint.py` 发一次最小请求 ——
   它失败时能分清"端点不通"和"CLI 配置错了"，比直接跑 planner 便宜得多。
-* 这一节刻意不写 `worker` 档的结论：本次没有测 worker（要真改文件、跑测试、花更多钱），
-  所以"小模型能不能当 `worker`"这个问题**本文没有答案**，不要从 planner 的结果外推。
+* 这一节（§3–§5）刻意不写 `worker` 档的结论：那些数字只覆盖"会按 schema 输出 planner JSON"。
+  **"小模型能不能当 worker"由 §7 单独回答**（2026-10-17 补测，一轮、单节点）。
 
 * 限制（诚实记录）：
   * 上表是**一轮**结果，不是统计意义上的成功率。要看成功率得反复跑，本文没做。
   * 端点侧的成本元数据是厂商特有的字段路径，所以公开仓里只留**中性**的实现
     （`--cost-path` 由使用者指定）；
   * 没有做"同一模型不同 `reasoning_effort`"的对照 —— 那会成倍放大调用次数。
+
+## 7. `worker` 档实测（2026-10-17，一轮、单节点）
+
+§3 的矩阵只回答"会不会规划"。这一节补上"**能不能真改对文件**"——用 `scripts/real_codex_smoke.py`
+跑**完整链路**（宪法草案 → 起树 → 真实 planner → 真实 worker 改文件 → 真实 verifier 验收）。
+
+### 怎么跑的
+
+```powershell
+# 端点：本机 127.0.0.1:15721 上的 OpenAI 兼容代理（不用 key，wire_api=responses）
+$env:CODEX_BATTLEFIELD_CODEX_HOME = "<隔离的 codex home，model = deepseek-flash>"
+$env:CODEX_BATTLEFIELD_STATE_HOME = "<隔离状态根>"
+$env:CODEX_BATTLEFIELD_RUNNER = "real"
+api\.venv\Scripts\python.exe scripts\real_codex_smoke.py `
+    --codex-bin "<npm 的 codex.cmd>" --timeout 300 --model deepseek-flash
+```
+
+隔离的 `codex home` / `state home` 是刻意的：不碰开发机的主配置，也不把 smoke 的树写进真实工程。
+
+### 结果：`ok = true`，`root_status = done`
+
+| 运行 | 状态 | exit | input / cached / output tokens | 时间（UTC+8） |
+|---|---|---|---|---|
+| planner | succeeded | 0 | 25 544 / 15 360 / 1 260 | 20:51:16 |
+| worker | succeeded | 0 | 68 141 / 44 672 / 1 382 | 20:51:33 |
+| verifier | succeeded | 0 | 47 408 / 20 992 / 2 735 | 20:51:56 |
+
+worker 自己报的证据（`result_json`）：`changed_files=["BATTLEFIELD_SMOKE.txt"]`、
+`length=31`、`expected_length=31`、`exact_match=True`、`has_trailing_newline=False`。
+verifier 独立复核（`verdict=pass`）：`Format-Hex` 逐字节比对 31 字节、末字节 `0x6B`（不是 CR/LF）、
+`leaf_misclassified=false`、`constitution_verdict=within_bounds`。
+宿主侧另有一道：`smoke_files` 与 `matching_files` 都命中同一个 worktree 里的文件，
+且 `debug_paths_ok=true`（prompt / last-message / logs / workdir / constitution_hash 五个路径都在）。
+
+### 这一轮**证明了**什么、**没证明**什么
+
+证明：一个便宜档（`deepseek-flash`）**能当 worker 用** —— 它按 schema 交回了"改了哪个文件 + 证据"，
+文件内容逐字节正确，verifier 也独立复核通过；三层（planner / worker / verifier）都跑在同一个便宜档上，
+整条链路约 **40 秒**。
+
+**没证明**（不要外推）：
+
+* **只有一轮、单节点**：`run_kinds = [planner, worker, verifier]`，**acceptance agent 这次没有跑**
+  （单节点树由 verifier 收口），所以"便宜档能不能当 acceptance"仍无答案；
+* **没有成功率**：要成功率必须反复跑，本文没做；
+* **没有失败模式样本**：这次一次过，没观察到它怎么写错（对比 §3：`qwen3.8-flash` 的失败形态是"结构漂移"）；
+* **金额未取到**：端点只在 `usage_json` 里回传 token，不回传费用 —— 按"取不到就记 null"的规矩，这里不推算；
+* **没测长跑/多节点/并发**：`scheduler`、`max_concurrency` 这些在单节点里根本没被压到。
+
+复现要花额度（本机这次约 141k input + 5.4k output tokens，价格由端点自己定），所以没进 `verify_all`
+的默认步骤 —— 它是 `--real-smoke` 那一档，需要凭据/额度时手工跑。

@@ -58,6 +58,13 @@ SKIP_DIRS = {
     "dist",
     "build",
     ".playwright",
+    # **运行时状态根**（gitignored）。它会同时出现在两处：仓库根的 `workspace/`
+    # 与 `api/workspace/`。里面必然含本机绝对路径与真实端点地址 —— 那是**运行产物**，
+    # 不是要发布的源码；扫它只会制造假命中并掩盖真实命中。
+    # 实测（2026-10-17）：跑一次 `scripts/real_codex_smoke.py` 之后，
+    # `workspace/runs/.../summary.json` 里就带 `C:\\Users\\<真名>\\...`，H3 立刻变红。
+    "workspace",
+    ".e2e",
 }
 TEXT_SUFFIXES = {
     ".py", ".md", ".ps1", ".cmd", ".toml", ".json", ".ts", ".tsx", ".js",

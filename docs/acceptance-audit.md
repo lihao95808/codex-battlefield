@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `856bcc80fafb2fdea13b6e0a7c96c73541d9f129`、内部仓 `a5f6587257e080310b863ffd8d5190f626a28f6f`。
+审计时的两个远端 tip：公开仓 `39e8bbb94d2a2556b80b89723af078ea3ab86923`、内部仓 `99f1b49818f739b408462fe2ab5e5bcc3d593931`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -43,7 +43,7 @@
 | P6-1 | 部分落地 | `api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）+ `test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉） |
 | P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4） |
 | P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码） |
-| P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵） |
+| P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `scripts/real_codex_smoke.py`（完整链路：worker 真改文件） + `docs/weak-model-usability.md`（planner 矩阵 §3、worker 档 §7） |
 | P6-5 | 部分落地 | `api/tests/test_provider_matrix.py`（25 例）+ `test_provider_wire_format.py`（F1–F4：假网关 + 真实 CLI 试出端点契约） |
 
 ## 2. 缺口清单（**没有证据的部分**）
@@ -58,13 +58,13 @@
 | P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）。**补上了“界面可用”的运行期那一半**：`test_web_dist_serving.py` 真的 `GET /`（要求 200 + `#root`）、真的取 `index.html` 引用的 `/assets/*`、并确认挂载在 `/` 没吃掉 `/api/*` —— 这是容器里“界面可用”依赖的**同一条机制**（仍不等于跑了容器）。 |
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
 | P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文`The job has exceeded the maximum execution time of 30m0s`，把预算提到 **45 分钟**再跑（run 38973770051 / commit 8d48868）—— Windows 侧 **16.4 分钟 success**（连续第三次全绿），ubuntu 侧 **>44.9 分钟仍没跑完**。**已做结构性处置**：`verify_all --group {python,web}` 把同一套门禁拆成两个并行作业（W13 盯着“并集等于全部步骤、两组不重叠、两个作业各自覆盖双平台”），顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
-| P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
+| P6-4 | **worker 档已实测通过**（2026-10-17，`scripts/real_codex_smoke.py` 完整链路、单节点一轮）：planner / worker / verifier 三次真实运行全 `exit_code=0`，worker 交回 `changed_files=[BATTLEFIELD_SMOKE.txt]`、31 字节逐字节正确，verifier 独立 `Format-Hex` 复核 `verdict=pass`，`root_status=done`、`debug_paths_ok=true`，整链约 40 秒（`docs/weak-model-usability.md` §7）。**仍未覆盖**：acceptance agent（单节点树里没跑）、多节点/长跑/并发、成功率统计与失败模式样本、费用金额（端点不回传 → 记 null，不推算） |
 | P6-5 | 三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**（F1–F4：必须支持 SSE 流式 + `response.output_item.done`） |
 
 ## 3. 双仓状态
 
-* 公开仓：`856bcc80fafb2fdea13b6e0a7c96c73541d9f129`（`origin/main`）
-* 内部仓：`a5f6587257e080310b863ffd8d5190f626a28f6f`（`internal/main`）
+* 公开仓：`39e8bbb94d2a2556b80b89723af078ea3ab86923`（`origin/main`）
+* 内部仓：`99f1b49818f739b408462fe2ab5e5bcc3d593931`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。

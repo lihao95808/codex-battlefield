@@ -1,4 +1,4 @@
-﻿"""数据保留的判据（P5-4）。
+"""数据保留的判据（P5-4）。
 
 ROADMAP 的判据是两句：**"清理后崩溃恢复仍可用"** 与 **"有保留窗口配置"**。
 第一句是本文件的重点，因为它最容易做成"看起来干净了，其实恢复不了"。
@@ -27,7 +27,14 @@ import pytest
 
 from app import retention
 
-NOW = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
+# ⚠️ `NOW` 必须**跟着真实时钟走**：夹具用真实 mtime（`_age` 用 `time.time() - days*86400`），
+# 而这里是 `now=NOW` 注入的"当前时刻"。曾经写死成 `datetime(2026, 10, 16, 12, 0)` ——
+# 到了 **2026-10-17 晚上**，"8 天前"的 mtime 只比 `NOW - 7 天` 早不到 1 天，R6 的边界判据
+# 从绿变成**稳定红**（不是 flaky，是判据到期了：写死的时间会过期）。
+# 那一轮的真实报错：`assert inside not in removable` 通过、`assert outside in removable` 红
+# ——因为 `outside` 的 mtime 落在了 cutoff 之后。
+# 用真实时钟之后，两侧余量（6 天 vs 8 天，窗口 7 天）与设计意图一致，且**不会过期**。
+NOW = datetime.now(timezone.utc)
 
 
 def _age(path: pathlib.Path, *, days: float) -> None:

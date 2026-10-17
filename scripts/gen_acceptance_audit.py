@@ -61,7 +61,8 @@ JUDGEMENTS: dict[str, str] = {
     "`test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉）",
     "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）",
     "P6-3": "`api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码）",
-    "P6-4": "`scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵）",
+    "P6-4": "`scripts/probe_weak_model_planner.py` + `scripts/real_codex_smoke.py`（完整链路：worker 真改文件）"
+    " + `docs/weak-model-usability.md`（planner 矩阵 §3、worker 档 §7）",
     "P6-5": "`api/tests/test_provider_matrix.py`（25 例）+ `test_provider_wire_format.py`（F1–F4：假网关 + 真实 CLI 试出端点契约）",
 }
 
@@ -92,7 +93,12 @@ GAP_REASONS: dict[str, str] = {
     "顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。"
     "**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。"
     "另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了",
-    "P6-4": "只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测",
+    "P6-4": "**worker 档已实测通过**（2026-10-17，`scripts/real_codex_smoke.py` 完整链路、单节点一轮）："
+    "planner / worker / verifier 三次真实运行全 `exit_code=0`，worker 交回 "
+    "`changed_files=[BATTLEFIELD_SMOKE.txt]`、31 字节逐字节正确，verifier 独立 `Format-Hex` 复核 "
+    "`verdict=pass`，`root_status=done`、`debug_paths_ok=true`，整链约 40 秒（`docs/weak-model-usability.md` §7）。"
+    "**仍未覆盖**：acceptance agent（单节点树里没跑）、多节点/长跑/并发、成功率统计与失败模式样本、"
+    "费用金额（端点不回传 → 记 null，不推算）",
     "P6-5": "三类端点的**真实可达性与鉴权未验**（本机没凭据）；**端点契约已离线实测**"
     "（F1–F4：必须支持 SSE 流式 + `response.output_item.done`）",
 }
