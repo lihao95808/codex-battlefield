@@ -137,7 +137,7 @@ ubuntu 作业才有意义。
 
 **仍未验**：真 Linux CI（`ubuntu-latest`，账单解开之前拿不到）；macOS（本机没有）。
 
-### 7.5 清零：Linux 后端整套 **1729 通过 / 33 跳过 / 0 失败**（1 分 43 秒）
+### 7.5 清零：Linux 后端整套 **1736 通过 / 33 跳过 / 0 失败**（1 分 37 秒）
 
 处理方式分两类，**都写清了理由**（不是为了让绿而绿）：
 
@@ -148,9 +148,16 @@ ubuntu 作业才有意义。
 | 需要 Windows 侧工具 | skip 并说明 | `provider_matrix` 的 M8（脚本内部调 pwsh）、`provider_wire_format`（POSIX 上从 `/mnt/c` 挑到 Windows 的 `codex` 转发器会 `Exec format error`） |
 | 跑法伪失败 | skip 并说明"CI 的 ext4 检出不会这样" | `public_tree_hygiene` H1/H3 在 `/mnt/…`（drvfs）上遍历超 90s |
 
-结果：**1729 passed, 33 skipped, 0 failed, 1min43s**（跳过数从 12 涨到 33，因为多了平台守卫 ——
+结果：**1736 passed, 33 skipped, 0 failed, 1min37s**（跳过数从 12 涨到 33，因为多了平台守卫 ——
 这是**诚实**的涨：那些用例在 Linux 上本来就不该跑）。
 同时整套耗时从 4 分 32 秒降到 1 分 43 秒（drvfs 上的两次全树扫描被跳过了）。
+
+**一条关于判据自己的教训**：新加的 Q14（"文档里的环境变量必须真的被读"）第一版用 `rglob`
+遍历实现文件、再过滤掉 `node_modules` —— 在 Windows 的 NTFS 上很快，但在 WSL 的 `/mnt/d`（drvfs）上
+它会把 `web/node_modules/.pnpm/**` 整个走一遍，于是**判据自己 90 秒超时**。
+修法是遍历时就剪枝（`os.walk` + `dirnames[:] = [...]`）。
+记这条的理由和产品性能问题一样：**门禁里的判据也会踩性能坑**，而它只在另一个平台上暴露 ——
+这正是"一定要在 Linux 上真跑一次"的另一个理由。
 
 **仍未验**：macOS（本机没有）；真 Linux CI（`ubuntu-latest`，等 GitHub 账单）。
 

@@ -343,15 +343,25 @@ def test_q13_api_paths_claimed_in_docs_are_routed() -> None:
 
 
 def _implementation_files() -> list[Path]:
-    patterns = ("*.py", "*.ps1", "*.ts", "*.tsx", "*.mjs", "*.json", "*.yml", "*.yaml", "*.sh")
+    """实现文件清单。**遍历时就剪枝**，不是遍历完再过滤。
+
+    2026-10-18 的教训：第一版用 `rglob` 再过滤 `node_modules` —— 在 WSL 的 `/mnt/d`（drvfs）上，
+    `rglob` 会把 `web/node_modules/.pnpm/**` 全部走一遍，于是 Q14 **跑到 90 秒超时**
+    （Windows 上恰好够快，所以本地一直绿）。判据自己踩性能坑，和产品踩性能坑一样要修。
+    """
+
+    suffixes = {".py", ".ps1", ".ts", ".tsx", ".mjs", ".json", ".yml", ".yaml", ".sh"}
+    skip_dirs = {"node_modules", ".venv", "dist", ".git", "__pycache__", "test-results", "playwright-report"}
     files: list[Path] = []
     for base in ("api", "scripts", "web", ".github"):
-        for pattern in patterns:
-            files.extend(
-                path
-                for path in (REPO / base).rglob(pattern)
-                if not {"node_modules", ".venv", "dist"} & set(path.parts)
-            )
+        root = REPO / base
+        if not root.is_dir():
+            continue
+        for current, dirnames, filenames in os.walk(root):
+            dirnames[:] = [name for name in dirnames if name not in skip_dirs]
+            for name in filenames:
+                if Path(name).suffix in suffixes:
+                    files.append(Path(current) / name)
     return files
 
 
