@@ -1913,17 +1913,25 @@ class Orchestrator:
             db.commit()
         return True
 
-    def _external_codex_processes(self, max_cache_age_seconds: float = 2.0) -> list[dict[str, Any]]:
+    def _codex_process_rows(self) -> list[dict[str, Any]] | None:
+        """这次扫描的**原始行**：`[{"ProcessId":…, "CommandLine":…}, …]`；失败返回 `None`。
+
+        用 **WQL 服务端过滤**（`-Query … WHERE Name='codex.exe'`）而不是"取回全部进程再在
+        PowerShell 里 `Where-Object`"：实测（2026-10-17）cProfile 里那次全表扫描占掉第一次
+        `get_tree` 的 **0.895 秒**，换成服务端过滤后降到 **0.672 秒**（同一棵树本身的成本是
+        150–250ms）。语义完全一样：仍然拿 `CommandLine` 做 `@openai\\codex|codex-win32` 过滤。
+
+        ⚠️ 更彻底的做法是换成 `psutil.process_iter(["pid","name","cmdline"])`（几十毫秒，
+        而且非 Windows 也能用），但**本机装不上 psutil**（`pip install psutil` 报
+        "No matching distribution"，这个环境的索引里没有），所以**没法验证** ——
+        按"不发布没验过的路径"的规矩，这一轮不引入它，只记在 `docs/scale-baseline.md` §5 ⑥。
+        """
+
         if os.name != "nt":
             return []
-        now = utcnow()
-        cached = self._external_codex_process_cache
-        if cached is not None and (now - cached[0]).total_seconds() <= max_cache_age_seconds:
-            return list(cached[1])
-        workspace = str(Path(self.settings.workspace_dir)).replace("/", "\\").lower()
         command = (
-            "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.Name -eq 'codex.exe' -and ($_.CommandLine -match '@openai\\\\codex|codex-win32') } | "
+            "Get-CimInstance -Query \"SELECT ProcessId,CommandLine FROM Win32_Process WHERE Name='codex.exe'\" | "
+            "Where-Object { $_.CommandLine -match '@openai\\\\codex|codex-win32' } | "
             "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress -Depth 3"
         )
         try:
@@ -1937,41 +1945,47 @@ class Orchestrator:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except (OSError, subprocess.TimeoutExpired):
-            self._external_codex_process_scan_failed = True
-            return []
+            return None
         if completed.returncode != 0:
+            return None
+        if not completed.stdout.strip():
+            return []
+        try:
+            raw = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(raw, dict):
+            raw = [raw]
+        return [item for item in (raw if isinstance(raw, list) else []) if isinstance(item, dict)]
+
+    def _external_codex_processes(self, max_cache_age_seconds: float = 2.0) -> list[dict[str, Any]]:
+        now = utcnow()
+        cached = self._external_codex_process_cache
+        if cached is not None and (now - cached[0]).total_seconds() <= max_cache_age_seconds:
+            return list(cached[1])
+        workspace = str(Path(self.settings.workspace_dir)).replace("/", "\\").lower()
+        rows = self._codex_process_rows()
+        if rows is None:
             self._external_codex_process_scan_failed = True
             return []
         self._external_codex_process_scan_failed = False
-        if not completed.stdout.strip():
-            processes: list[dict[str, Any]] = []
-        else:
-            try:
-                raw = json.loads(completed.stdout)
-            except json.JSONDecodeError:
-                self._external_codex_process_scan_failed = True
-                return []
-            if isinstance(raw, dict):
-                raw = [raw]
-            processes = []
-            for item in raw if isinstance(raw, list) else []:
-                if not isinstance(item, dict):
-                    continue
-                command_line = str(item.get("CommandLine") or "")
-                normalized = command_line.replace("/", "\\").lower()
-                if workspace and workspace not in normalized:
-                    continue
-                if not self._is_battlefield_agent_codex_command_line(command_line):
-                    continue
-                task_id = self._task_id_from_codex_command_line(command_line)
-                status = self._agent_status_from_codex_command_line(command_line)
-                processes.append(
-                    {
-                        "pid": item.get("ProcessId"),
-                        "task_id": task_id,
-                        "status": status.value if status is not None else "",
-                    }
-                )
+        processes: list[dict[str, Any]] = []
+        for item in rows:
+            command_line = str(item.get("CommandLine") or "")
+            normalized = command_line.replace("/", "\\").lower()
+            if workspace and workspace not in normalized:
+                continue
+            if not self._is_battlefield_agent_codex_command_line(command_line):
+                continue
+            task_id = self._task_id_from_codex_command_line(command_line)
+            status = self._agent_status_from_codex_command_line(command_line)
+            processes.append(
+                {
+                    "pid": item.get("ProcessId"),
+                    "task_id": task_id,
+                    "status": status.value if status is not None else "",
+                }
+            )
         self._external_codex_process_cache = (now, processes)
         return list(processes)
 
