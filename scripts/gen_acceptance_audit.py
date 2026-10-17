@@ -41,6 +41,7 @@ JUDGEMENTS: dict[str, str] = {
     "P2-5": "`api/tests/test_state_admin.py`（迁移先预演、重置要抄 key）",
     "P2-6": "`web/src/i18n.test.ts` + `i18n.detect.test.ts`（32 例，逐条变异过）",
     "P3-1": "`api/tests/test_budget.py`（16 例：时间窗守卫 / agent burst / 预警档）+ "
+    "`test_budget_ceiling.py`（B1–B6：树级 token 上限，含接线判据）+ "
     "`test_settings_panel.py`（额度项）—— **没有** token 金额硬闸，见缺口清单",
     "P3-2": "`api/tests/test_cost.py`（区间而不是单值；样本不足拒绝给数）",
     "P3-3": "`api/tests/test_cost.py`（三维归因；取不到模型名不造假桶）",
@@ -78,8 +79,10 @@ GAP_REASONS: dict[str, str] = {
     "再加 agent burst 上限，**没有**“累计 token 达到上限就暂停”这道闸。"
     "已落地：① 时间窗守卫（`api/tests/test_budget.py` 16 例）；② burst 上限与预警档；"
     "③ 一次性放行（`clear_budget_guard` + 预授权，不改上限）。"
-    "**未做**：树级累计 token / 金额硬闸 —— P6-4 的实测给了具体成本场景（一轮探针自己拆到 6 层、"
-    "24.1M input），现在只能靠人事先设时间窗 / burst 上限，不能靠“这棵树已经花了多少”自动停下。",
+    "**树级 token 上限已落地**（2026-10-18，`budget_token_ceiling`，默认 0=关）：每次起 agent 前用 "
+    "`cost.cost_report` 统计这棵树的累计 token，超上限就整树休眠 + 写 `budget.token_ceiling` 事件；"
+    "判据 `api/tests/test_budget_ceiling.py` B1–B6（B4 删钩子就红）。"
+    "**仍未做**：**金额**闸（只有 token；费用只有端点自报、币种可能不同）。",
     "P3-6": "后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏不是稳定达标**：cold 在 "
     "**1601–2403ms** 之间摆（四次实测 1601 / 1891 / 2403 / 1775ms，命中目标 3/4；"
     "2026-10-18 那次 2403ms `meets_target=false`），"

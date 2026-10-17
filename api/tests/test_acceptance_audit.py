@@ -57,7 +57,7 @@ JUDGEMENT_FILES: dict[str, tuple[str, ...]] = {
     "P2-4": ("test_diagnostics.py",),
     "P2-5": ("test_state_admin.py",),
     # P3-1 是"部分落地"（时间窗守卫 + burst 上限；token/金额硬闸未做），判据仍在同一条链上。
-    "P3-1": ("test_budget.py",),
+    "P3-1": ("test_budget.py", "test_budget_ceiling.py"),
     "P3-2": ("test_cost.py",),
     "P3-3": ("test_cost.py",),
     "P3-4": ("test_cross_project.py",),

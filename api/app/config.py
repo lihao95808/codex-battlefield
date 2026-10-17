@@ -242,6 +242,17 @@ class Settings:
         "steward_proactive_min_interval_seconds",
         900.0,
     )
+    # ---- 树级累计成本硬闸（P3-1 的第二道闸，2026-10-18 新增）----
+    # 原先 P3-1 只有**时间窗**守卫（额度耗尽 → 整树休眠到刷新时刻）+ agent burst（每窗口几个 agent），
+    # 没有"这棵树累计花了多少 token，到上限就停"。实测代价是具体的：一轮真实递归探针自己拆到
+    # 6 层、吃掉 24.1M input tokens，而系统不会因为"已经花太多"自动停下。
+    #
+    # `0` = 关闭（默认）。开启后**每次起 agent 之前**会按 `cost.cost_report` 统计一次这棵树的
+    # 累计 token（单次扫描 run_records，O(运行数)）—— 这个成本是它默认关闭的原因之一：
+    # 想看住成本的人明确打开它，不想跑大工程的人不为它付扫描代价。
+    budget_token_ceiling: int = int(
+        _env_or_config("CODEX_BATTLEFIELD_BUDGET_TOKEN_CEILING", "budget_token_ceiling") or "0"
+    )
     codex_reasoning_effort_constitution: str = os.getenv(
         "CODEX_BATTLEFIELD_CODEX_REASONING_EFFORT_CONSTITUTION", ""
     )

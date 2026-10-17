@@ -125,6 +125,21 @@ SETTINGS: tuple[EditableSetting, ...] = (
         maximum=20,
         help="与上一条配套。默认 3；设得太低会把正常的返工误判成'注定失败'。",
     ),
+    # P3-1 的第二道闸：树级累计 token 上限。**默认 0（关）** —— 它会在每次起 agent 前
+    # 扫一遍这棵树的 run_records，那是真实开销；想封顶成本的人明确打开它。
+    EditableSetting(
+        key="budget_token_ceiling",
+        env="CODEX_BATTLEFIELD_BUDGET_TOKEN_CEILING",
+        label="树级 token 上限",
+        kind="int",
+        group="policy",
+        minimum=0,
+        maximum=2_000_000_000,
+        help=(
+            "0 = 关闭。大于 0 时，每次起 agent 前统计这棵树的累计 token；超了就整树休眠并写事件，"
+            "只能由人放行（清守卫或预授权），不会自动把上限改大。"
+        ),
+    ),
     EditableSetting(
         key="auto_hibernate_when_idle",
         env="CODEX_BATTLEFIELD_AUTO_HIBERNATE_WHEN_IDLE",

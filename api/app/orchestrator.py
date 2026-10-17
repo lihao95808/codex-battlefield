@@ -32,6 +32,7 @@ from . import budget
 from . import calibration
 from . import checkpoint
 from . import concurrency
+from . import cost
 from . import constitution_versions
 from . import constraints
 from . import convergence
@@ -85,6 +86,11 @@ ACTIVE_AGENT_STATUSES = runtime_logs.ACTIVE_AGENT_STATUSES
 CONVERGENCE_SLICE_REPEAT_LIMIT = convergence.CONVERGENCE_SLICE_REPEAT_LIMIT
 CODEX_LOG_TIMESTAMP_RE = runtime_logs.CODEX_LOG_TIMESTAMP_RE
 WORKER_EMPTY_DECOMPOSITION_RETRY_LIMIT = 1
+#: 树级 token 上限触发后，整树休眠多久（秒）。24 小时不是"额度恢复时间"——
+#: 到点后如果仍超上限，下一次起 agent 会再休眠一次（净效果是"一直停着，每天重新确认一次"）。
+#: 为什么不用无限期：现有守卫是**时间窗**模型，`set_budget_guard` 要求一个正的窗口；
+#: 引入第二种"永不到期"的守卫会让看板出现两种语义，反而更难解释。
+BUDGET_TOKEN_GUARD_RESUME_SECONDS = 24 * 3600
 RETRYABLE_BLOCK_CATEGORIES = blockers.RETRYABLE_BLOCK_CATEGORIES
 RESOURCE_PRESSURE_BLOCK_CATEGORIES = blockers.RESOURCE_PRESSURE_BLOCK_CATEGORIES
 FAST_RETRYABLE_BLOCK_CATEGORIES = blockers.FAST_RETRYABLE_BLOCK_CATEGORIES
@@ -2218,6 +2224,72 @@ class Orchestrator:
             db.commit()
         return True
 
+    async def _hold_agent_start_for_token_budget(self, task_id: str, phase: str) -> bool:
+        """**树级累计 token 硬闸**（P3-1 的第二道闸）：超了就整树休眠，等人工放行。
+
+        ## 为什么需要它（实测的代价，不是假想）
+
+        原先只有时间窗守卫（额度耗尽 → 休眠到刷新）+ agent burst（每窗口几个 agent），
+        **没有**“这棵树已经花了多少就停”。2026-10-18 的一轮真实递归探针自己拆到 **6 层**、
+        吃掉 **24.1M input tokens** —— 系统全程没有停，因为它不知道“这棵树花了多少”。
+        同一句目标、同一档模型，有时 4M、有时 24M，差 6 倍。
+
+        ## 口径
+
+        * `settings.budget_token_ceiling = 0` → 关闭（默认）；
+        * 统计用 `cost.cost_report(db, root_id)["attribution"]["total_tokens"]` —— 与
+          P3-3 的归因**同一套规范化**，不另写一份“这棵树花了多少”（两份口径必然漂移）；
+        * 触发时走**同一个** `set_budget_guard`：整树休眠 + 写事件 + 看板可见；
+          放行仍是“人工清守卫”或预授权，**不是**自动把上限改大；
+        * 休眠窗口取 `BUDGET_TOKEN_GUARD_RESUME_SECONDS`（24 小时）。到期后若仍超上限，
+          下一次起 agent 会再次休眠 —— 净效果是“一直停着”，只是每天重新确认一次。
+
+        ## 已知代价（写在代码里，不藏在文档里）
+
+        每次起 agent 前扫一遍这棵树的 `run_records`（O(运行数)）。千节点长跑时这是真实开销，
+        所以默认关闭；打开它的人是在用“每次扫描”换“成本封顶”。
+        """
+
+        ceiling = int(self.settings.budget_token_ceiling or 0)
+        if ceiling <= 0:
+            return False
+        with SessionLocal() as db:
+            task = self._get_task(db, task_id)
+            root_id = self._root_id_for_task(db, task)
+            if self._active_budget_guard(root_id):
+                # 已经在守卫里：继续拦住（对已经在休眠的节点也一样），但**不要**再叠一条事件、
+                # 也不要重复休眠 —— 否则看板上会出现一长串"刚刚又超预算了"。
+                return True
+            if task.status in TERMINAL_STATUSES or task.status in STOPPED_STATUSES:
+                return False
+            report = cost.cost_report(db, root_id)
+        used = int((report.get("attribution") or {}).get("total_tokens") or 0)
+        if used < ceiling:
+            return False
+        reason = (
+            f"树级 token 上限已用完：本树已用 {used:,} tokens / 上限 {ceiling:,}。"
+            "树已休眠，等人工确认后再恢复 —— 这是这棵树自己的上限，不是账户额度。"
+        )
+        with SessionLocal() as db:
+            root = db.get(TaskNode, root_id)
+            if root is not None:
+                self._add_event(
+                    db,
+                    root_id,
+                    "budget.token_ceiling",
+                    reason,
+                    {
+                        "root_id": root_id,
+                        "task_id": task_id,
+                        "phase": phase,
+                        "used_tokens": used,
+                        "ceiling_tokens": ceiling,
+                    },
+                )
+                db.commit()
+        await self.set_budget_guard(root_id, BUDGET_TOKEN_GUARD_RESUME_SECONDS, reason)
+        return True
+
     def _try_reserve_pending_codex_slot_with_capacity(self, task_id: str, phase: str) -> bool:
         capacity = max(1, self._agent_semaphore.capacity)
         outcome: dict[str, Any] = {}
@@ -2300,6 +2372,8 @@ class Orchestrator:
         if self._hold_agent_start_for_api_restart(task_id, phase):
             return False
         if await self._hold_agent_start_for_machine_safety(task_id, phase):
+            return False
+        if await self._hold_agent_start_for_token_budget(task_id, phase):
             return False
         reserved_pending_slot = self._runner_mode_for_task(task_id) == "real"
         if reserved_pending_slot:
