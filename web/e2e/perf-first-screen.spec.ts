@@ -96,6 +96,26 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
   );
   const url = `http://127.0.0.1:${API_PORT}/?root_id=${ROOT_ID}`;
 
+  // 线索③（"渲染 1000 个节点要多久"）以前只能靠猜，因为 `tree_ms` 里混着"等网络"。
+  // 用浏览器的 **long task** 观测来分离：主线程上一次超过 50ms 的阻塞都会被记下来，
+  // 它才是"前端自己花的钱"。**不改产品代码**（`addInitScript` 只在这个测试的页面里生效）。
+  await page.addInitScript(() => {
+    const bucket: { start: number; duration: number }[] = [];
+    (window as unknown as { __longTasks: typeof bucket }).__longTasks = bucket;
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          bucket.push({ start: Math.round(entry.startTime), duration: Math.round(entry.duration) });
+        }
+      });
+      observer.observe({ entryTypes: ['longtask'] });
+    } catch {
+      // 浏览器不支持 longtask 就**如实为空**（不伪造 0 —— 空数组与"没有长任务"是两件事，
+      // 由 `long_tasks.supported` 区分）。
+      bucket.push({ start: -1, duration: -1 });
+    }
+  });
+
   const started = Date.now();
   await page.goto(url);
   await expect(page.getByLabel('L4 自动导航画布').locator('.react-flow__node').first()).toBeVisible({
@@ -147,6 +167,22 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
   }
   const serverMs = Math.min(...samples);
 
+  // 主线程账单：长任务次数、总计、最长一次（含前 8 条的起点/时长）。
+  const longTasks = await page.evaluate(() => {
+    const raw = (window as unknown as { __longTasks?: { start: number; duration: number }[] }).__longTasks ?? [];
+    const supported = raw.every((item) => item.start >= 0);
+    const real = raw.filter((item) => item.start >= 0);
+    const total = real.reduce((sum, item) => sum + item.duration, 0);
+    const longest = real.reduce((max, item) => Math.max(max, item.duration), 0);
+    return {
+      supported,
+      count: real.length,
+      total_ms: total,
+      longest_ms: longest,
+      top: [...real].sort((a, b) => b.duration - a.duration).slice(0, 8),
+    };
+  });
+
   mkdirSync(resolve(WEB_ROOT, '.e2e'), { recursive: true });
   writeFileSync(
     ARTIFACT,
@@ -158,6 +194,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
         warm_ms: warmMs,
         breakdown,
         server_tree_ms: { min: serverMs, samples },
+        long_tasks: longTasks,
         target_ms: TARGET_MS,
         ratchet_ms: RATCHET_MS,
         meets_target: coldMs < TARGET_MS,
@@ -176,6 +213,7 @@ test(`千节点首屏（目标 ${TARGET_MS}ms，棘轮 ${RATCHET_MS}ms）`, asyn
     `[perf] 千节点首屏 cold=${coldMs}ms warm=${warmMs}ms（目标 ${TARGET_MS}ms，` +
       `棘轮 ${RATCHET_MS}ms，达标=${coldMs < TARGET_MS ? '是' : '否'}）` +
       `payload=${(payloadBytes / 1024).toFixed(0)}KB 服务端取树=${JSON.stringify(samples)}ms ` +
+      `主线程长任务=${longTasks.count} 次/共 ${longTasks.total_ms}ms/最长 ${longTasks.longest_ms}ms ` +
       `拆解=${JSON.stringify(breakdown)}`,
   );
 

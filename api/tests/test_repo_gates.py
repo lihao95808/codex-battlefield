@@ -137,6 +137,41 @@ def test_rebuild_index_script_validates_the_asked_scope(monkeypatch: pytest.Monk
     with pytest.raises(SystemExit) as rejected:
         script.main()
     assert rejected.value.code == 2
+
+
+def test_pytest_has_a_per_test_timeout() -> None:
+    """pytest 必须带 `--timeout`（pytest-timeout）。
+
+    为什么这条值得单独钉（2026-10-17 实测）：Linux CI 上的 Python 组分片**超过 45 分钟
+    没跑完**（同一份在 Windows 上 6.7 分钟、本机 83 秒），而作业被掐掉时**没有任何日志**
+    —— "哪条用例卡住"这个问题因此永远问不出来。给每条用例加上上限之后，卡住的那条会在
+    上限处**带着名字失败**：门禁从"跑不完、没证据"变成"跑得完但红，且指名道姓"。
+
+    钉子本身很浅（配置里得有那个开关），但它防的是"哪天有人为了让本地跑快点把它删掉" ——
+    删掉之后症状不是红的，而是下一次 Linux 作业又变成一团没有日志的超时。
+    """
+
+    import tomllib
+
+    config = tomllib.loads((ROOT / "api" / "pyproject.toml").read_text(encoding="utf-8"))
+    addopts = str(config["tool"]["pytest"]["ini_options"].get("addopts", ""))
+    assert "--timeout=" in addopts, f"pytest 的 addopts 里没有 --timeout：{addopts!r}"
+    dev = " ".join(config["project"]["optional-dependencies"]["dev"])
+    assert "pytest-timeout" in dev, "dev 依赖里没有 pytest-timeout"
+
+
+def test_rebuild_index_script_rejects_wrong_scope_with_a_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """上面那条判据的续集：拒绝要**有说法**，而且合法范围要照常放行。
+
+    （原先是同一条用例的后半段；拆成两条是因为"配置里必须有 --timeout"那条新判据把它挤开了
+    —— 拆开之后两条各自表达一件事，读起来也更清楚。）
+    """
+    script = _load("rebuild_index_under_test_2", ROOT / "scripts" / "rebuild_obligation_index.py")
+    monkeypatch.setattr(sys, "argv", ["rebuild_obligation_index.py", "--by-type", "--status", "opne"])
+    with pytest.raises(SystemExit):
+        script.main()
     assert "--status" in capsys.readouterr().err
 
     # 反面自检：合法范围必须照常放行，否则上面那条断言只是证明"什么都拒"。
