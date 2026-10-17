@@ -57,7 +57,8 @@ JUDGEMENTS: dict[str, str] = {
     "P5-4": "`api/tests/test_retention.py`（清理后仍能还原）",
     "P5-5": "`api/tests/test_trace_correlation.py`（10 例 + 四组变异）",
     "P5-6": "`api/tests/test_crash_injection.py`（每个写入阶段硬杀一次）",
-    "P6-1": "`api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）",
+    "P6-1": "`api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）+ "
+    "`test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉）",
     "P6-2": "`api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4）",
     "P6-3": "`api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码）",
     "P6-4": "`scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵）",
@@ -76,7 +77,10 @@ GAP_REASONS: dict[str, str] = {
     "P5-2": "长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”本机两连跑已达标**"
     "（cold 1601 / 1891ms；同一判据此前 2.4–4.8s），判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外"
     "还多了一条回归钉子（页面取树 TTFB < 700ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过）",
-    "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）",
+    "P6-1": "本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）。"
+    "**补上了“界面可用”的运行期那一半**：`test_web_dist_serving.py` 真的 `GET /`（要求 200 + `#root`）、"
+    "真的取 `index.html` 引用的 `/assets/*`、并确认挂载在 `/` 没吃掉 `/api/*` —— 这是容器里"
+    "“界面可用”依赖的**同一条机制**（仍不等于跑了容器）。",
     "P6-2": "本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过）",
     "P6-3": "**Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），"
     "绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。"

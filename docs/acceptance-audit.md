@@ -6,7 +6,7 @@
 （每条交付物都说了状态、声明的判据文件真的存在、未验项没被悄悄删掉、双仓差异仍是 7 个文件、
 **本文件与生成器的输出一致**）。**文档与代码脱节时会红**，这是这份文件存在的意义。
 
-审计时的两个远端 tip：公开仓 `26c325a3d7a792ce2b1f9b5b87cb42247cfd7e64`、内部仓 `201938997b317f5502da19f446236161f585a163`。
+审计时的两个远端 tip：公开仓 `aa57407824cda5db1c7684de705057605999cde6`、内部仓 `46eaed07e5c2f67101471b340f9a163210093a1f`。
 （本文件由 `scripts/gen_acceptance_audit.py` 生成 —— 手改会在下一次生成时被覆盖。）
 
 > **这里刻意不写“本地 HEAD”**：写了它会自相矛盾 —— 文档里含 HEAD 的哈希，
@@ -40,7 +40,7 @@
 | P5-4 | 已落地 | `api/tests/test_retention.py`（清理后仍能还原） |
 | P5-5 | 已落地 | `api/tests/test_trace_correlation.py`（10 例 + 四组变异） |
 | P5-6 | 已落地 | `api/tests/test_crash_injection.py`（每个写入阶段硬杀一次） |
-| P6-1 | 部分落地 | `api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽） |
+| P6-1 | 部分落地 | `api/tests/test_container.py`（21 例）+ `test_container_static.py`（D1–D8 语法与自洽）+ `test_web_dist_serving.py`（W1–W4 **运行期**：API 真的托管 `web/dist`，且 `/api/*` 没被挂载吃掉） |
 | P6-2 | 部分落地 | `api/tests/test_platform_support.py`（17 例）+ `test_cross_platform_windows_only.py`（W1–W4） |
 | P6-3 | 已落地（有未验项） | `api/tests/test_ci_workflow.py`（18 例，含步骤名逐字同步 + W10/W11 子进程编码） |
 | P6-4 | 已落地（有未验项） | `scripts/probe_weak_model_planner.py` + `docs/weak-model-usability.md`（实测矩阵） |
@@ -55,7 +55,7 @@
 |---|---|
 | P3-6 | 后端规模判据达标（1000 节点 130ms/640KB）。**前端首屏本机已达标**：两连跑 cold **1601 / 1891ms**（目标 < 2s），一路是量出来的 —— 侧栏重活改成“树到位再挂”（4406→3033ms）、cProfile 定住第一次 `get_tree` 的 0.895s 是 **PowerShell/WMI 全表扫进程**（缓存 TTL 2 秒）→ 换 WQL 服务端过滤（0.895→0.672s）+ **启动预热 + 后台每 1.5 秒刷新缓存** → 页面取树 TTFB **1165→253–277ms**。判据三层：目标 2000ms、棘轮 6000ms、TTFB<700ms（回归钉子）。**仍未验证**：慢机器/CI 上的首屏（CI 下跳过；2 vCPU runner 上千节点 >180s，量的是 runner 容量）。下一步最大项是客户端渲染（长任务 ~0.9s，DOM 只有 400 节点）—— 见 `docs/scale-baseline.md` §5 |
 | P5-2 | 长列表虚拟化已做（交给布局器的节点有界且会说出挡住多少）；**“千节点首屏 < 2s”本机两连跑已达标**（cold 1601 / 1891ms；同一判据此前 2.4–4.8s），判据 `web/e2e/perf-first-screen.spec.ts` 除目标与棘轮外还多了一条回归钉子（页面取树 TTFB < 700ms）；**仍未验证**：慢机器/CI 上的首屏（CI 下跳过） |
-| P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过） |
+| P6-1 | 本机**没有 Docker**，`docker compose up` 一次都没跑过（语法与自洽已用 D1–D8 静态验过）。**补上了“界面可用”的运行期那一半**：`test_web_dist_serving.py` 真的 `GET /`（要求 200 + `#root`）、真的取 `index.html` 引用的 `/assets/*`、并确认挂载在 `/` 没吃掉 `/api/*` —— 这是容器里“界面可用”依赖的**同一条机制**（仍不等于跑了容器）。 |
 | P6-2 | 本机**没有 Linux/WSL/可用容器**，没在 Linux 上跑过任何东西（平台分派已用 L1–L9 验过） |
 | P6-3 | **Windows 侧已全绿**（run 38956861930，18.5 分钟，含 pytest + 前端 build + E2E），绿之前 CI 自己抓出并逼我们修了三处“只有本机能过”（cp1252 编码、未用 import、审计 `normalise` 不认“取不到”）。**Linux 侧仍无完整记录**，但**原因与量级都查清了**：加 `timeout-minutes` 后注解给出原文`The job has exceeded the maximum execution time of 30m0s`，把预算提到 **45 分钟**再跑（run 38973770051 / commit 8d48868）—— Windows 侧 **16.4 分钟 success**（连续第三次全绿），ubuntu 侧 **>44.9 分钟仍没跑完**。**已做结构性处置**：`verify_all --group {python,web}` 把同一套门禁拆成两个并行作业（W13 盯着“并集等于全部步骤、两组不重叠、两个作业各自覆盖双平台”），顺带修掉一处静默变弱（抽步骤名原来漏掉多行的 `provider 矩阵配置检查`）。**仍未验证**：拆组之后 Linux 侧的第一次完整记录；拆组当次已拿到 **首次 Linux 绿灯**（verify-web ubuntu 2.5 分钟），只剩“Python 组在 Linux 上 45 分钟跑不完”（同一份 Windows 6.7 分钟、本机 83 秒）——已给每条用例装 `--timeout=120`，下次会指名道姓。**另有账号侧阻塞**：`run 38985269338` 四个作业 3 秒内全失败，注解 `The job was not started because recent account payments have failed or your spending limit needs to be increased...` —— **不是代码问题**，是 Actions 额度/账单需要仓库所有者处理（自我记账与据此定的“一轮只推一次”纪律见 `docs/ci.md` §11）。另：旧结论“本机没有触发 Actions 的手段”是错的 —— CI 一直在跑（`on: push`），是“推完就走”把运行自己取消了 |
 | P6-4 | 只到 **planner 粒度**；worker 能否改对文件、verifier 验收、长跑稳定性未测 |
@@ -63,8 +63,8 @@
 
 ## 3. 双仓状态
 
-* 公开仓：`26c325a3d7a792ce2b1f9b5b87cb42247cfd7e64`（`origin/main`）
-* 内部仓：`201938997b317f5502da19f446236161f585a163`（`internal/main`）
+* 公开仓：`aa57407824cda5db1c7684de705057605999cde6`（`origin/main`）
+* 内部仓：`46eaed07e5c2f67101471b340f9a163210093a1f`（`internal/main`）
 * 差异必须**恰好 7 个文件**（公开仓 + 7 个 overlay）：其中 2 个是公开树里也有的
   文件（内部仓改写了它们），另外 5 个只存在于内部仓。
   多一个少一个都说明同步出了问题（Q5 会红，它会把具体文件名打在失败信息里）。
