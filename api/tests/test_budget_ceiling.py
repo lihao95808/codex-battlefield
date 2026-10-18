@@ -20,6 +20,7 @@ P3-1 原来只有两样东西：**时间窗守卫**（账户额度耗尽 → 整
 from __future__ import annotations
 
 import asyncio
+import uuid
 import json
 from pathlib import Path
 
@@ -65,7 +66,10 @@ def _seed_tree(tmp_path: Path, *, usage_tokens: int) -> tuple[str, str]:
 
     init_db()
     # 每个用例一套独立 id：测试库是共享的，写死 id 会撞 UNIQUE（本文件第一版就是这样红的）。
-    suffix = tmp_path.name
+    # 后缀必须**每次调用都不同**：`tmp_path.name` 是测试名，跨运行恒定，
+    # 而测试库在某些跑法下会跨次保留 —— 2026-10-18 的门禁就这么撞过
+    # `UNIQUE constraint failed: task_nodes.id`。
+    suffix = f"{tmp_path.name}-{uuid.uuid4().hex[:8]}"
     with SessionLocal() as db:
         root = TaskNode(
             id=f"ceiling-root-{suffix}",

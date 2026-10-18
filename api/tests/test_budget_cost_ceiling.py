@@ -25,6 +25,7 @@ C1–C6 各钉一条：
 from __future__ import annotations
 
 import asyncio
+import uuid
 import json
 from pathlib import Path
 
@@ -51,7 +52,10 @@ def _seed(tmp_path: Path, entries: list[dict]) -> tuple[str, str]:
     """种根 + 子节点，并按 `entries` 各写一条运行记录。"""
 
     init_db()
-    suffix = tmp_path.name
+    # 后缀必须**每次调用都不同**：`tmp_path.name` 是测试名，跨运行恒定，
+    # 而测试库在某些跑法下会跨次保留 —— 2026-10-18 的门禁就这么撞过
+    # `UNIQUE constraint failed: task_nodes.id`。
+    suffix = f"{tmp_path.name}-{uuid.uuid4().hex[:8]}"
     root_id = f"costroot-{suffix}"
     child_id = f"costchild-{suffix}"
     with SessionLocal() as db:

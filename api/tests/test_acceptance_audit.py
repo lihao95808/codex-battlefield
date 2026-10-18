@@ -291,6 +291,30 @@ def _doc_files() -> list[Path]:
     return [ROADMAP, *sorted((REPO / "docs").glob("*.md"))]
 
 
+def _is_gitignored(relative: str) -> bool:
+    """这个路径是否被 `.gitignore` 忽略（= 构建/运行产物，干净检出里本来就没有）。
+
+    为什么 Q12 需要它（2026-10-18 第一次真 CI 的红）：
+    文档里会自然地写 `api/.venv/Scripts/python.exe` 这类**由 CI 自己造出来**的路径
+    （workflow 里就是 `python -m venv api/.venv`）。本地工作树有它、干净检出没有 ——
+    Q12 因此在 **两个平台的 CI 上都红了**（`1 failed, 1742 passed`），
+    而它要防的是"文档指着不该存在的东西"，不是"文档提到构建产物"。
+    """
+
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            ["git", "check-ignore", "-q", relative],
+            cwd=str(REPO),
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
 def test_q12_repo_file_references_in_docs_exist() -> None:
     pattern = re.compile(r"`((?:scripts|api|web|docs|schemas)/[A-Za-z0-9_\-./]+)`")
     missing: dict[str, set[str]] = {}
@@ -301,9 +325,17 @@ def test_q12_repo_file_references_in_docs_exist() -> None:
             if not (REPO / ref).exists():
                 missing.setdefault(ref, set()).add(path.name)
 
-    unexpected = sorted(set(missing) - set(MISSING_BY_DESIGN))
+    # 三类放行：① 明确"故意不存在"的允许表；② 被 gitignore 的构建/运行产物
+    # （`api/.venv`、`web/dist` 这类由 CI 或本机自己造出来的路径）；
+    # 其余一律算文档撒谎。
+    unexpected = sorted(
+        item
+        for item in set(missing) - set(MISSING_BY_DESIGN)
+        if not _is_gitignored(item)
+    )
     assert unexpected == [], (
-        "文档里点名了不存在的文件（要么补文件、要么把它写进 MISSING_BY_DESIGN 并说明理由）："
+        "文档里点名了不存在的文件（要么补文件、要么写进 MISSING_BY_DESIGN 并说明理由，"
+        "要么它本来就该是 gitignore 的产物）："
         f"{[(item, sorted(missing[item])[:3]) for item in unexpected]}"
     )
     stale = sorted(ref for ref in MISSING_BY_DESIGN if (REPO / ref).exists())
