@@ -470,6 +470,22 @@ ubuntu `1 failed, 1742 passed, 26 skipped`、windows `1 failed, 1747 passed, 21 
 顺带一条纪律没有因为转公开而放松：**一轮只推一次**（§11.2）。公开仓免费不等于可以拿 CI 当本机门禁 ——
 本机 `verify_all` 仍然是每次必跑，CI 证明的是"在别的平台上也成立"。
 
+### 12.4 第三次公开运行（`run 39111311275`，commit `6bfb7f4`）：**又一次四个作业全绿**
+
+这一次推的是**文档**（本节连同 ROADMAP / 审计一起改），它要回答的问题是
+"记录 CI 的这些文字会不会把门禁本身弄红"：
+
+| 作业 | 结论 | 耗时 |
+|---|---|---|
+| verify-python (ubuntu-latest) | **success** | 1:39 |
+| verify-python (windows-latest) | **success** | 5:40 |
+| verify-web (ubuntu-latest) | **success** | 1:50 |
+| verify-web (windows-latest) | **success** | 5:49 |
+
+三件事因此成立：① 全绿**不是一次性运气**（连续两次）；② 本节引用的数字不是抄错的分支；
+③ 文档里新增的路径引用、`run` 编号、`§` 互指都过了 Q12/Q15 那几条"文档不许撒谎"的判据。
+ubuntu 的 Python 组这次 **1:39**（上一次 1:49），差异来自缓存与机器负载，不是代码变化。
+
 ## 13. 已知限制（如实写下）
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
