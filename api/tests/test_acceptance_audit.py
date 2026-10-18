@@ -303,16 +303,23 @@ def _is_gitignored(relative: str) -> bool:
 
     import subprocess
 
-    try:
-        completed = subprocess.run(
-            ["git", "check-ignore", "-q", relative],
-            cwd=str(REPO),
-            capture_output=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
+    def matches(candidate: str) -> bool:
+        try:
+            completed = subprocess.run(
+                ["git", "check-ignore", "-q", candidate],
+                cwd=str(REPO),
+                capture_output=True,
+                timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return completed.returncode == 0
+
+    # ⚠️ 要连"子路径"一起试：`.gitignore` 里的目录规则带尾斜杠（`dist/`），
+    # 而 git 只有在路径**确实是个目录**时才认它 —— 干净检出里 `web/dist` 根本不存在，
+    # 于是 `check-ignore web/dist` 返回"不忽略"，Q12 在 CI 上照样红
+    # （本地有那个目录，所以本地永远绿）。试一下 `<path>/x` 就能让目录规则匹配上。
+    return matches(relative) or matches(f"{relative}/x")
 
 
 def test_q12_repo_file_references_in_docs_exist() -> None:
