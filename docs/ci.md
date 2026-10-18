@@ -400,27 +400,96 @@ your spending limit needs to be increased…`。**作业根本没启动**，所�
 顺带一条可量化的事实：被账单挡住的运行**不占配额**（2–3 秒、零分钟），所以用
 「一次推送换一次结论」去探账单状态是便宜的 —— 但仍然只推**有内容的提交**，不为了探账单而刷提交。
 
-## 12. 已知限制（如实写下）
+## 12. 真正的解法：仓库转公开 —— 四个作业第一次同时全绿（2026-10-18）
+
+§11 记了两天的账单阻塞，最后的解法既不是"等客户充值"也不是"少推几次"，而是**改仓库的可见性**。
+GitHub Actions 的计费规则是：**公开仓库的 runner 分钟数免费、不限量**；私有仓库才按分钟扣配额
+（Windows runner 按 **2 倍**计费）。所以"要拿 Linux 证据就得多花钱"这个前提本身就是错的 ——
+P6-3 需要的证据一直是免费的，只是被仓库可见性挡住了。
+
+### 12.1 转公开之前先做自查（先看会不会泄漏，再看能不能跑）
+
+公开 = 任何人都能读全部历史，所以顺序必须是"先清树、再看能不能跑"，而不是反过来：
+
+1. **vendor 词表本身不在仓库里**：`scripts/check_public_tree.py` 用"通用规则 + 词表规则"
+   扫整棵树，词表文件放在**仓库外**（本机放在 `D:\work\.cb-public-terms.txt`，共 5 个词）。
+   把词表放进仓库等于把词表也公开。
+   内部仓是"公开仓 + 7 个 overlay 文件"，那 7 个文件带 vendor 命名，所以**内部仓必须保持私有**。
+   这条规矩在本节写第一版时当场被自己违反了一次：当时把 5 个词**直接列在这里**，
+   `test_public_tree_hygiene.py::test_h4` 立刻红（词表命中 `docs/ci.md`）。
+   **要核对词表就去跑那个用例，别把词抄进文档。**
+2. **历史也扫**（不只是工作树）：`git log -p --all` 上真出现过 vendor 字符串，
+   已在那次改动里清掉；转公开前用的是**当前 tip 的整棵树**判据（`scripts/check_public_tree.py`）
+   加一次人工 `git grep` 全历史复核。
+3. **转完之后验的是"匿名能读"**，不是"看起来公开了"：
+   `GET https://api.github.com/repos/lihao95808/codex-battlefield` **不带任何凭据**返回 200 且
+   `"private": false` —— 这两件事不等价，只有前者才是"确实公开"。
+
+### 12.2 第一次公开运行（`run 39108578313`，commit `2cb3e11`）：四个作业**全部启动**，CI 抓到 Q12
+
+| 作业 | 结论 | 耗时 |
+|---|---|---|
+| verify-python (ubuntu-latest) | `failure` | 1:50 |
+| verify-python (windows-latest) | `failure` | 5:34 |
+| verify-web (ubuntu-latest) | `success` | 1:57 |
+| verify-web (windows-latest) | `success` | 5:40 |
+
+§11 那条账单注解**消失了**：四个作业都起得来、都有日志、都给出了结论。
+而两个平台的 Python 组**同时红在同一条** ——
+ubuntu `1 failed, 1742 passed, 26 skipped`、windows `1 failed, 1747 passed, 21 skipped`，
+失败的都是 **Q12**（"文档里点名的仓库内文件必须存在"）。
+
+漏判原因是 `.gitignore` 里的 `dist/` 是**目录规则**：它对"不存在的路径"永远不匹配。
+本机 `web/dist` 存在所以匹配得上，CI 上它还没构建 → 被判成"文档撒谎"。
+修法是 `_is_gitignored()` 同时探 `matches(path)` 与 `matches(path + "/x")`。
+**这是"只有本机能过"的第四个实例**，也正是 CI 值钱的地方：本机永远绿，两个平台同时红。
+
+### 12.3 第二次公开运行（`run 39110375359`，commit `0bff507`）：**四个作业全绿**
+
+| 作业 | 结论 | 耗时 | 组内数字（日志原文） |
+|---|---|---|---|
+| verify-python (ubuntu-latest) | **success** | 1:49 | `1743 passed, 26 skipped, 4 warnings in 85.94s (0:01:25)` |
+| verify-python (windows-latest) | **success** | 6:13 | `1748 passed, 21 skipped, 4 warnings in 325.50s (0:05:25)` |
+| verify-web (ubuntu-latest) | **success** | 1:26 | vitest `15 passed (15)` / `221 passed (221)`；E2E `6 passed (20.1s)` |
+| verify-web (windows-latest) | **success** | 5:51 | 同上 `221 passed`；E2E `6 passed (33.6s)` |
+
+两处值得单独写下：
+
+1. **"Linux 上 Python 组 45 分钟跑不完"的根因**在 `scripts/bench_supervise.py` 的
+   `terminate_tree()`：它在 POSIX 上对**子进程所在的进程组**发 `killpg`，而那个子进程与
+   pytest **同组** —— 于是这条"杀进程树"的用例把 pytest 自己杀了。留下的形态是
+   "作业超时、没有任何 traceback"；本机 WSL 复现时 pytest 在 9%–26% 之间**直接消失**。
+   修法：POSIX 上 `start_new_session=True` + 拒绝向"自己所在的组"发信号，
+   再加两条判据钉住（`test_supervisor_must_not_signal_its_own_process_group` 只跑 POSIX、
+   `test_supervisor_spawns_the_child_in_its_own_session`）。修完之后同一个作业
+   **45 分钟 → 1 分 49 秒**，比 Windows 快 3.5 倍（Linux 上 fork 便宜，
+   而 Windows 那条 325 秒里有大量 `subprocess` 冷启动）。
+2. **E2E 在 CI 上是 6 条而不是 7 条**：第 7 条是千节点首屏（§13 第一条），
+   在 `process.env.CI` 下跳过并写明原因。数字对得上，不是"少跑了一条没人知道"。
+
+顺带一条纪律没有因为转公开而放松：**一轮只推一次**（§11.2）。公开仓免费不等于可以拿 CI 当本机门禁 ——
+本机 `verify_all` 仍然是每次必跑，CI 证明的是"在别的平台上也成立"。
+
+## 13. 已知限制（如实写下）
 * **CI 上跑不了千节点首屏判据**（`web/e2e/perf-first-screen.spec.ts`）：`run 38965425892`
   （windows-latest）跑到它时整套用例超时（`apiRequestContext.get: Test timeout of 180000ms exceeded`，
   E2E 步 1 failed / 6 passed）—— 2 vCPU 的 runner 上首屏走不完 180 秒。判据因此在 `process.env.CI`
   下**跳过并写明原因**（本机仍然跑，数字记在 `docs/scale-baseline.md` §5）。
   这条不是"关掉判据"，而是"在量不到的地方不假装量到了"：CI 的门禁仍然覆盖 E2E 的 6 条接缝用例。
 
-* **Linux 上 `verify_all` 没有一次跑完的记录**（45 分钟未完成，日志 404）。
-  所以"CI 在 Linux 上会绿"这句话仍然**没有证据**；有证据的是：工作流结构合法、
-  与本地门禁一致、安装命令当场验证过、Windows 那一侧的具体故障已被定位并修掉。
-* **Linux 上可能有测试要改**。本机扫了一遍，发现的 Windows 依赖大多是
-  **被 mock 掉的**（例如 `test_orchestrator.py` 里 `subprocess.run` 被替换成
-  `fake_run`，所以 `["powershell.exe", ...]` 从不真的执行），
-  而 `test_migration.py` 的路径断言**已经同时接受两种分隔符**。
-  但"扫一遍"不等于"跑过" —— 真有问题要等 CI 第一次跑完才能说。
-  这正是 P6-2（Linux 支持）与本次**是两件事**的原因：本次交付的是"能发现问题的机制"，
-  不是"问题已经解决"。
+* **Linux 侧已经跑通**（§12.3），但**两个平台的数字不同**：同一份用例
+  ubuntu `1743 passed / 26 skipped`、windows `1748 passed / 21 skipped`。
+  差值全部来自 Windows-only 的用例被平台守卫跳过（`watchdog install`、`L4` 的
+  Windows 路径形状、盘符比较、`pwsh`/`codex.cmd` 这类本机工具），不是"少装了依赖"。
+  逐类口径见 `docs/cross-platform.md` §7。
+
 * **`pnpm` 版本写的是 10**，而本机用的是 11.8.0。`lib` 里没有 `packageManager` 字段，
-  所以这是我选的而不是仓库声明的。若 CI 因锁文件版本差异失败，改这里的版本号即可。
+  所以这是我选的而不是仓库声明的。`run 38956861930` 与 `run 39110375359` 都在 pnpm 10 上绿了，
+  所以这个数字暂时不动 —— 动它要有一次真实运行做证据。
+
 * **没有缓存 Python 依赖**（只缓存了 pnpm）。给 pip 加缓存需要在干净环境里先跑一次
-  才能确定 key，目前没做 —— 代价是每次 CI 多几十秒。
+  才能确定 key，目前没做 —— 代价是每次 CI 多几十秒（ubuntu 整组 1:49 里 pytest 本身 85.94s）。
+
 * **CI 状态查询不进判据**：读 GitHub API 需要凭据，而凭据不能进仓库（见
   `docs/public-tree-hygiene.md`）。所以"CI 现在是什么状态"只能人工查 ——
-  这条"看板"缺口如实记下，不做成假门禁。
+  这条"看板"缺口如实记下，不做成假门禁。§12 里的四个数字就是人工查出来再抄进来的。

@@ -135,7 +135,7 @@ POSIX 上反斜杠是普通字符 → 迁移后的 worktree 路径变成 `…/wo
 （`skipif(sys.platform == 'win32')` / 反向），让 Linux 的这 20 条变成 0 条 —— 那时 CI 的
 ubuntu 作业才有意义。
 
-**仍未验**：真 Linux CI（`ubuntu-latest`，账单解开之前拿不到）；macOS（本机没有）。
+**真 Linux CI 也拿到了**（`run 39110375359`，ubuntu `1743 passed, 26 skipped`、整组 1 分 49 秒；因果链见 `docs/ci.md` §12.3 —— 45 分钟跑不完的根因是本仓自己的监督器 `killpg` 杀了 pytest）。**仍未验**：macOS（本机没有）。
 
 ### 7.5 清零：Linux 后端整套 **1736 通过 / 33 跳过 / 0 失败**（1 分 37 秒）
 
@@ -159,7 +159,7 @@ ubuntu 作业才有意义。
 记这条的理由和产品性能问题一样：**门禁里的判据也会踩性能坑**，而它只在另一个平台上暴露 ——
 这正是"一定要在 Linux 上真跑一次"的另一个理由。
 
-**仍未验**：macOS（本机没有）；真 Linux CI（`ubuntu-latest`，等 GitHub 账单）。
+**仍未验**：macOS（本机没有）。真 Linux CI 已绿（见 §7 与 `docs/ci.md` §12.3）。
 
 ## 5. 没做的（如实写下）
 
