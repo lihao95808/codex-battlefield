@@ -53,6 +53,27 @@ extraction_completed、extraction_failed、error。接受归档不等于完成�
 需要认证时设置 `CODEX_BATTLEFIELD_MEMORY_API_KEY`；可选 `CODEX_BATTLEFIELD_MEMORY_PEER_ID`
 只做关联标签，不作为工程隔离或授权边界。密钥不存入快照或日志。
 
+### 3.1 一步一步接上 OpenViking（实测路径）
+
+1. **装服务**：`uv tool install openviking==0.5.0` 或独立 venv 里
+   `uv pip install openviking==0.5.0`；Windows 上本地 embedding 还需要
+   `llama-cpp-python` 的官方 CPU wheel（PyPI 上没有可用 wheel，PyPI 二进制安装会失败）。
+2. **建配置**（关键四项）：`storage.workspace` 指一个专用目录、`embedding.dense` 用
+   `provider:"local"` + `bge-small-zh-v1.5-f16` + `dimension:512`、`vlm` 指向一个 OpenAI 兼容
+   端点、`server.agent_evolution.enabled:true`。
+3. **必须打开经验管线**：`memory.extraction_enabled:true` 且
+   `server.agent_evolution.enabled:true`。只开前者会归档但**不产出 experience**；
+   `cases.yaml` 的 `peer_enabled:false` 决定了**只能写到 user 命名空间**，不要用 peer 子树。
+4. **起服务**并确认 `/ready` 通过；注意 `/health`、`/ready` 为 200 **不代表** embedding 真能用，
+   要另跑一次 `search/find` 才算数。
+5. **验证一次检索**：`POST /api/v1/search/find`，带 `target_uri=viking://user/<user>/memories/experiences/`。
+   返回 `status=ok` 且有 `memories` 才算真正可用；空数组要区分"没经验"和"没搜到"。
+6. **告诉战场**：设置 `CODEX_BATTLEFIELD_MEMORY_URL=http://127.0.0.1:<port>` 与
+   `CODEX_BATTLEFIELD_MEMORY_USER_ID=<同一个 user>`，重启 API；左栏「日志与诊断 → 经验与外部记忆」
+   里 `提供方` 应显示已启用。
+7. **认证**：正式使用要建**独立用户 key**（api_key 模式下身份来自 key，`X-OpenViking-User`
+   头会被忽略）；dev 模式的用户只是命名空间，**不是访问控制**，仅限本机回环。
+
 每个工程应配独立的 OpenViking user 与用户 API key；战场查询明确的该用户 experiences
 子树，发布时检查返回的会话 user 身份。不能用 ROOT key 做日常任务记忆。
 没有真实认证的开发服务中，user 命名空间只是分类，不是访问安全保证。
