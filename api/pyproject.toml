@@ -27,7 +27,7 @@ dev = [
 # "Multiple top-level packages discovered: ['app', 'workspace']"，而不是警告。
 # 显式列出还顺带保证 `app/tools/` 真的随包发布（那些工具脚本是要在运行时复制出去的）。
 [tool.setuptools]
-packages = ["app", "app.tools"]
+packages = ["app", "app.tools", "app.scene3d"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

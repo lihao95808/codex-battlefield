@@ -1,10 +1,102 @@
 # Codex Battlefield 当前验证状态
 
-更新时间：2026-09-24（最新一次见下面的「2026-09-24 索引读面审计修正 + 端到端实证」；更早的记录保留原文）
+更新时间：2026-10-19（最新一次见下面的「2026-10-19 scene3d 真实闭环」；更早的记录保留原文）
 
 > **时效说明**：2026-06-16 那一节是**那一天**的一次完整验证记录，数字是**当时的规模**（当时后端 18 例、前端 2 例）。
 > 用例规模此后长了很多（当前规模见 `README.md` 的「跑测试」一节）。那里保留原文不改数字——
 > 它记的是"那天跑过什么"，改成今天的数字就不再是证据了。
+
+## 2026-10-19 scene3d M1 库内规则
+
+SPEC 复审修入 10 处规则问题（LCA 责任域、scope importance/connectivity、单一上限来源、
+R-C7 检查域相容、R-C8 负样本、v1 旧快照兼容、报告字段、精度出口 not_evaluated、里程碑归属）。
+
+实现：v2-r2 强校验、scope 图、LCA 责任域与 `responsible_scope` 报告、检查依赖与坐标系分离、
+缺依赖显式失败、坐标系取完整声明、叶子内在检查要求、确定性装配与中间输出、严格正整数上限。
+
+**本轮抓到两个真实缺陷**（都由新规则暴露，不是测试写错）：
+
+1. 线脚检查按整条带取域，两级线脚上半层合法地只有 0.55 倍外凸 → 合法实现被判失败；
+   更早那次 0.83 的“通过”实际是被塔身填满，遮蔽与过严同时存在。
+2. 窗框检查借墙坐标系，但门窗包视图没有墙面槽位 → 坐标解析失败，跨包检查解不出。
+
+**证据**：scene3d 全套 101 passed；后端全量 2054 passed / 4 skipped / 0 failed；
+首次全量曾出现 1 例 `test_recover_existing_verifier_run_settles_active_state` 偶发失败，
+单跑与整卷重跑均通过，判定为 xdist 并行偶发并记录。ruff 通过；Markdown 54 文件 0 问题。
+
+**未完成**：R-C7 域角点抽样、R-C8 负样本生成、M1b 编排器绑定与 receipt、
+M2 精度计划编译与事前预算、M3 UI、M4 真实分件递归运行。
+
+## 2026-10-19 scene3d 真实闭环
+
+`root-71c57668cd` **DONE**，独立运行完整链 **183.95 秒**。
+真实 `run_records`：5 条具有 command / prompt / logs / last-message / workdir / constitution hash 的模型调用，
+退出码全为 0；根 planner、叶 planner、worker、verifier 为 `deepseek-flash`，父 acceptance 为 `gpt-6.1-sol`。
+另有 1 条 synthetic acceptance，占位不当成模型运行。
+宪法是产品固定模板冻结，不计为模型生成宪法。
+
+- 冻结声明未被改变；实际模型生成脚本已经检查，无 reference_parts 调用。
+- worker CLI validate、独立 verifier、父验收及可信编排器 gate 均通过；
+  28 项特征与额外装配连通性通过，叶子/父各有 `scene3d_gate.passed` 事件。
+- 真正父 integration target 有 PNG 900×620 / 646,347 B、GLB 34,476 B、渲染配置、参数与文档，已查看图片。
+- 源 PNG SHA256：`2096378c5683b86c96aeb08c2ff005546a1bbb3db1fd8d182941ba4bee479c37`。
+- 本轮全量：**2024 passed / 4 skipped / 27 warnings**，107.55 秒，退出码 0；
+  硬门禁专项 23 passed；紧凑工具/角色回归 108 passed；最后加入驱动生命周期的相关回归 79 passed。
+- ruff 通过。保留既有 GBK 解码 warning，不将它解释为环境完全没有问题。
+
+失败不是静默丢弃：首轮受限 Windows 沙箱拒绝 shell；次轮真实 worker 出图后触发 150 秒超时，树休眠；
+带正确 catalog 的一次尝试因调度返回后测试进程退出而停在 queued。
+最终修复 compact describe、Flash 支持的 none 档、PowerShell `&`、根实际集成路径、测试驱动延迟调度存活。
+成功测试使用独立配置/SQLite/状态/目标工程，并显式 danger-full-access；不修改全局用户设置。
+
+**边界**：真实任务仅一层完整场景叶子；无槽位子集深层递归、无通用全局精度自动出口、
+无专用几何 UI/HTTP，本次测试树未导入当前 GUI。20 槽位与窗棂 5cm 是样例尺度，不能证明任意世界已可收敛。
+复現入口 `scripts/real_scene3d_probe.py`，内层 480 秒 / 外层监督 540 秒。
+完整证据、隔离 SQLite 与原始模型日志已经交付，不以旧参考烟测截图代替。
+
+## 2026-10-19 scene3d runner 接线复核（历史阶段）
+
+本轮新增 `tests/test_scene3d_runner.py`，实际执行工作区投递工具，正样本退出码 0、
+错尺寸退出码 2；三种真实角色提示词均引用工具，普通任务不注入。
+专项与角色提示词回归：**77 passed**（1.62 秒），ruff 通过。
+本轮后端全量：**1997 passed / 4 skipped / 27 warnings**（106.71 秒），退出码 0。
+warning 含既有 GBK 子进程读线程解码警告，未将其解释成没有环境问题。文档排版 53 文件、0 问题。
+反面用例覆盖 NaN/Infinity、空检查、退化区域、悬空但总 AABB 重叠、旧渲染图、
+非零 Blender 退出与伪图片；GLB 外法向按每个三角形断言。
+
+`scripts/verify_scene3d_runtime.py` 从真实 worker 提示词投递工具，再执行声明/参考填写/
+独立验证/Blender 渲染，全链 3.78 秒，退出码 0，PNG 646,043 字节（900×620），已人工查看。
+这不是模型任务树运行；不存在相应 planner/worker/verifier 的真实 run records。
+提示词引用工具也不等于编排器自动执行硬门禁，HTTP/UI 尚未接。
+
+## 2026-10-19 scene3d 能力包（切片 1）
+
+新增 `api/app/scene3d/`（声明 / 校验 / 度量 / 渲染）与 `api/tests/test_scene3d.py`（31 例），
+`pyproject.toml` 的 `packages` 增加 `app.scene3d`，文档 `docs/spec-scene3d.md` 并挂进 `docs/README.md`。
+
+**跑过的命令与结果**
+
+| 命令 | 结果 |
+|---|---|
+| `python -m app.scene3d declaration --out …` | 20 槽位 / 28 条特征校验 / 18,722 字节声明 |
+| `python -m app.scene3d reference …` → `validate …` | **退出码 0**，28/28 特征全绿，**116 ms** |
+| `python -m app.scene3d metrics …` | IoU **1.0**、spill 0.0、gap 0.0（参考填写 138 盒 / 484.8 m³） |
+| `python -m app.scene3d render --views hero`（900×620、24 samples） | **退出码 0**，GLB 35,936 B → PNG 643,853 B，Blender 5.2.0 |
+| `pytest tests/test_scene3d.py -n 0` | **31 passed**（0.25 s） |
+| `ruff check app/scene3d tests/test_scene3d.py` | **All checks passed** |
+| `pytest -q`（后端全量） | **1984 passed / 4 skipped**，93.31 s |
+| `python scripts/check_markdown_layout.py .` | 53 个 .md，问题 **0** 处 |
+
+**环境事实（不是缺陷，但会让人误以为红了）**：本机 PATH 上没有 `git`。
+`tests/test_acceptance_audit.py` 的两例（`test_q6_…` / `test_q7_…`）会以
+`FileNotFoundError: [WinError 2]` 失败——它们要跑 `scripts/gen_acceptance_audit.py`，脚本内部起 git。
+把仓库常用的 minGit 加进 PATH 后（`tools/mingit/cmd`）两例即通过，全量变为 1984 passed。
+本次两轮都跑过：**不加 git**：1975 passed / 11 skipped / **2 failed**；
+**加 git**：1984 passed / 4 skipped / **0 failed**。
+
+**未验证 / 未接线**：编排器门禁未调用 `evaluate()`；无 HTTP 端点；前端无指标卡与图墙；
+**没有任何真实模型（Flash/Sol）的填写经过这套判据**——本轮判定对象是 `reference_parts()` 的参考答案。
+渲染不进单测（一张约 45 s，会撞 120 s/用例上限），由手动/门禁外脚本跑。
 
 ## 2026-10-19 IDE 布局与工程目录树
 

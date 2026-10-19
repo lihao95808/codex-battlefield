@@ -107,6 +107,63 @@ def json_check_guidance(workspace_dir: Path) -> str:
     )
 
 
+def ensure_scene3d_tool(workspace_dir: Path) -> Path:
+    """Deploy the standard-library scene3d package next to a standalone entry script.
+
+    Do not point nodes at the application checkout or require its virtualenv on their PATH.
+    Refresh from trusted sources when constructing each role prompt.
+    """
+    source = Path(__file__).resolve().parent / "scene3d"
+    runtime = workspace_dir / "tools" / "_scene3d_runtime"
+    package = runtime / "scene3d"
+    package.mkdir(parents=True, exist_ok=True)
+    for src in source.glob("*.py"):
+        target = package / src.name
+        text = src.read_text(encoding="utf-8")
+        if not target.exists() or target.read_text(encoding="utf-8", errors="replace") != text:
+            target.write_text(text, encoding="utf-8")
+    entry = runtime / "scene3d_tool.py"
+    entry.write_text(
+        "import sys\nsys.stdout.reconfigure(encoding='utf-8')\nsys.stderr.reconfigure(encoding='utf-8')\n"
+        "from scene3d.cli import main\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+        encoding="utf-8",
+    )
+    return entry
+
+
+def scene3d_guidance(workspace_dir: Path, task_text: str, role: str) -> str:
+    """Only 3D tasks receive this tool; prompt guidance is not an enforced orchestrator gate."""
+    if not any(token in task_text.casefold() for token in ("3d", "blender", "三维", "三維")):
+        return ""
+    tool = ensure_scene3d_tool(workspace_dir)
+    command = ("& " if sys.platform.startswith("win") else "") + f'"{sys.executable}" "{tool}"'
+    shared = (
+        "SCENE3D_TOOL (deterministic, no model calls): " + command + "\n"
+        "For scene3d-compatible box assemblies use a project-owned scene.declaration.json and scene.parts.json. "
+        "The declaration is the parent-approved contract; workers must not weaken its slots/checks/domains. "
+        "Do not use the built-in castle declaration for unrelated geometry. "
+        "Start with this compact contract summary: " + command + " describe --declaration scene.declaration.json\n"
+        "This reports required values and free-parameter domains only; it does not fill a reference answer. "
+        "Use the public CLI rather than repeatedly reading all implementation files or help pages. "
+        "Once validate succeeds and requested images exist, write concise delivery evidence and return final JSON promptly. "
+        "Validate with: " + command + " validate --declaration scene.declaration.json --parts scene.parts.json --json\n"
+        "Exit 0 means these checks passed; 2 means rejected; 3 means tool failure, never pass evidence. "
+        "An unsupported non-box Blender task needs its own validators, not a fabricated scene3d pass.\n"
+    )
+    if role in {"verifier", "acceptance"}:
+        return shared + (
+            "Run validate independently on the submitted files. Do not change them or run reference/render "
+            "during read-only verification. Never accept a worker's claim as command evidence. "
+            "Report rejects and the actual exit code in verifier evidence.\n"
+        )
+    return shared + (
+        "After validation, render real geometry through Blender with: " + command
+        + " render --declaration scene.declaration.json --parts scene.parts.json --out scene3d-output --views hero,gate,top\n"
+        "Render has a bounded timeout and a unique run directory. Include the returned PNG/GLB paths "
+        "relative to WORKING_DIRECTORY in changed_files/evidence. Screenshots alone do not prove recursive convergence.\n"
+    )
+
+
 def resolve_godot_executable(settings: Settings) -> str:
     configured = settings.godot_bin.strip()
     if configured:

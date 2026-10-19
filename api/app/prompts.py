@@ -280,6 +280,10 @@ def inherited_constraints_block(task: TaskNode) -> str:
     )
 
 
+def _scene3d_task_text(task: TaskNode) -> str:
+    return f"{task.title}\n{task.description}\n{task.acceptance_json}"
+
+
 def worker_prompt(settings: Settings, task: TaskNode) -> str:
     return (
         "You are the worker subprocess for one Codex Battlefield leaf node.\n"
@@ -314,6 +318,7 @@ def worker_prompt(settings: Settings, task: TaskNode) -> str:
         f"{text_integrity_guidance()}"
         f"{runner_tools.negative_match_guidance(settings.workspace_dir)}"
         f"{runner_tools.json_check_guidance(settings.workspace_dir)}"
+        f"{runner_tools.scene3d_guidance(settings.workspace_dir, _scene3d_task_text(task), 'worker')}"
         "Return status=blocked only for true external blockers such as unavailable credentials, unreachable required services, or missing tools that cannot be worked around by decomposition.\n\n"
         f"{skill_lookup_guidance(settings)}"
         "Windows text rule: when reading or writing Chinese/user-visible text, use Python with encoding='utf-8'. "
@@ -378,6 +383,7 @@ def verifier_prompt(settings: Settings, task: TaskNode, worker_result: WorkerRes
         f"{text_integrity_guidance()}"
         f"{runner_tools.negative_match_guidance(settings.workspace_dir)}"
         f"{runner_tools.json_check_guidance(settings.workspace_dir)}"
+        f"{runner_tools.scene3d_guidance(settings.workspace_dir, _scene3d_task_text(task), 'verifier')}"
         f"{read_only_validation_guidance()}"
         "External validation rule: the Codex process itself may run for a long time, but every external command you start "
         "(Godot, npm, Python scripts, tests, asset tools, or similar) must have a local timeout or bounded watchdog. "
@@ -530,6 +536,7 @@ def acceptance_prompt(settings: Settings, task: TaskNode, children: list[dict]) 
         f"{text_integrity_guidance()}"
         f"{runner_tools.negative_match_guidance(settings.workspace_dir)}"
         f"{runner_tools.json_check_guidance(settings.workspace_dir)}"
+        f"{runner_tools.scene3d_guidance(settings.workspace_dir, _scene3d_task_text(task), 'acceptance')}"
         f"{skill_lookup_guidance(settings)}"
         f"{godot_validation_guidance(settings)}\n"
         f"TASK_ID: {task.id}\n"

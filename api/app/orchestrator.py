@@ -53,6 +53,7 @@ from . import skill_notes
 from . import verification_surface
 from . import watchdog
 from . import worktrees
+from .scene3d import gate as scene3d_gate
 from .codex_signals import (
     is_local_skill_failure,
 )
@@ -836,6 +837,7 @@ class Orchestrator:
         goal = repair_mojibake_text(goal)
         target_path = repair_mojibake_text(target_path) if target_path else None
         root_id = new_id("root")
+        scene_binding = scene3d_gate.freeze_contract(self.settings.workspace_dir, root_id, target_path)
         with SessionLocal() as db:
             constitution = self._resolve_locked_constitution(db, constitution_id)
             constitution.root_id = root_id
@@ -847,7 +849,10 @@ class Orchestrator:
                 depth=0,
                 status=TaskStatus.PLANNED.value,
                 scope_json=dumps([target_path] if target_path else []),
-                node_meta_json=dumps({"runner_mode": runner_mode or self.settings.runner_mode, "agent_burst_used": 0}),
+                node_meta_json=dumps({
+                    "runner_mode": runner_mode or self.settings.runner_mode, "agent_burst_used": 0,
+                    **({"scene3d_contract": scene_binding} if scene_binding is not None else {}),
+                }),
                 constitution_id=constitution.id,
                 constitution_hash=constitution.content_hash,
                 constitution_json=constitution.data_json,
@@ -4301,6 +4306,50 @@ class Orchestrator:
             db.commit()
         return child_ids
 
+    def _scene3d_completion_gate(self, db: Session, task: TaskNode) -> dict[str, Any] | None:
+        """One completion boundary for normal, recovered and revalidated verdicts.
+
+        No opt-in means no events/result changes. A bound tree fails closed and
+        reads the node's worktree, or for parents only the actual integration
+        target used by _integrate_child_outputs. Leaves never fall back to seed.
+        """
+        root_id = self._root_id_for_task(db, task)
+        root = self._get_task(db, root_id)
+        binding = loads(root.node_meta_json, {}).get("scene3d_contract")
+        if binding is None:
+            return None
+        delivery_path = task.worktree_path
+        delivery_source = "worktree" if delivery_path else "missing_worktree"
+        if not delivery_path and db.scalar(select(TaskNode.id).where(TaskNode.parent_id == task.id).limit(1)):
+            integration_target = self._integration_target_path(db, task)
+            delivery_path = str(integration_target) if integration_target is not None else None
+            delivery_source = "parent_integration_target"
+        report = scene3d_gate.evaluate_contract(
+            self.settings.workspace_dir, root_id, binding, delivery_path,
+        )
+        report["delivery_source"] = delivery_source
+        self._add_event(
+            db, task.id,
+            "scene3d_gate.passed" if report["passed"] else "scene3d_gate.repair_required",
+            "3D 冻结契约与几何门禁通过。" if report["passed"] else "3D 硬门禁失败，禁止完成并转既有修复路径。",
+            report,
+        )
+        return report
+
+    def _scene3d_gate_repair_children(self, task: TaskNode, report: dict[str, Any]) -> list[ChildTaskSpec]:
+        return [ChildTaskSpec(
+            title=f"{task.title}：完整 3D 契约交付修复",
+            description=(
+                "修复完整场景交付，使冻结 seed contract 的所有槽位与几何检查通过。"
+                "不得放宽、删除或修改声明/contract；必须恢复原声明并交付完整 parts。"
+                "修复子节点也适用同一完整契约，不得拆出只有报告而无完整场景的交付叶子。"
+                f"\n独立门禁报告：{dumps(report)}"
+            ),
+            scope=loads(task.scope_json, []),
+            acceptance=["冻结声明 hash 一致，完整 parts 通过编排器确定性几何门禁。"],
+            coverage_ids=["scene3d-contract"], estimated_leaf=True,
+        )]
+
     def _apply_verifier_result(
         self,
         db: Session,
@@ -4314,7 +4363,18 @@ class Orchestrator:
             return []
         if self._existing_recovered_run(db, task, RunKind.VERIFIER, Path(verifier_envelope.last_message_path or "")) is None:
             self._record_run(db, task, RunKind.VERIFIER, verifier_envelope, "workspace-write")
-        task.result_json = dumps({"worker": worker_result.model_dump(), "verifier": verifier_result.model_dump()})
+        scene_report = self._scene3d_completion_gate(db, task) if verifier_result.verdict == "pass" else None
+        if scene_report is not None and not scene_report["passed"]:
+            verifier_result = verifier_result.model_copy(update={
+                "verdict": "repair",
+                "reason": "3D 硬门禁未通过，verifier pass 不足以完成；必须修复完整契约交付。",
+                "suggested_children": verifier_result.suggested_children or self._scene3d_gate_repair_children(task, scene_report),
+            })
+        final_result = {
+            "worker": worker_result.model_dump(), "verifier": verifier_result.model_dump(),
+            **({"scene3d_gate": scene_report} if scene_report is not None else {}),
+        }
+        task.result_json = dumps(final_result)
         task.progress_current = 2
         task.progress_total = 2
         if verifier_result.verdict == "pass":
@@ -4330,7 +4390,7 @@ class Orchestrator:
                 verifier_result.suggested_children,
                 "task.leaf_misclassified",
                 verifier_result.reason,
-                {"worker": worker_result.model_dump(), "verifier": verifier_result.model_dump()},
+                final_result,
             )
         elif verifier_result.verdict == "blocked":
             self._block_task(db, task, verifier_result.reason, "verifier.blocked", verifier_envelope.payload)
@@ -4367,7 +4427,7 @@ class Orchestrator:
                 verifier_result.suggested_children,
                 "task.leaf_misclassified",
                 verifier_result.reason,
-                {"worker": worker_result.model_dump(), "verifier": verifier_result.model_dump()},
+                final_result,
             )
         return child_ids
 
@@ -4946,6 +5006,7 @@ class Orchestrator:
 
         child_ids: list[str] = []
         final_gate_repair_gate: dict[str, Any] | None = None
+        scene_result: dict[str, Any] = {}
         with SessionLocal() as db:
             task = self._get_task(db, task_id)
             if task.status in TERMINAL_STATUSES or task.status in STOPPED_STATUSES:
@@ -4963,6 +5024,9 @@ class Orchestrator:
                 acceptance_result.retrospective,
             )
             if acceptance_result.verdict == "pass":
+                scene_report = self._scene3d_completion_gate(db, task)
+                if scene_report is not None:
+                    scene_result = {"scene3d_gate": scene_report}
                 integration_gate = self._parent_godot_integration_gate(db, task)
                 final_gate = self._final_root_product_gate(db, task)
                 task.result_json = dumps(
@@ -4971,9 +5035,16 @@ class Orchestrator:
                         "acceptance": acceptance_result.model_dump(),
                         "integration_gate": integration_gate,
                         "final_gate": final_gate,
+                        **scene_result,
                     }
                 )
-                if integration_gate["required"] and not integration_gate["passed"]:
+                if scene_report is not None and not scene_report["passed"]:
+                    acceptance_result = acceptance_result.model_copy(update={
+                        "verdict": "repair",
+                        "reason": "父节点已集成交付的 3D 硬门禁未通过，必须继续修复。",
+                        "suggested_children": acceptance_result.suggested_children or self._scene3d_gate_repair_children(task, scene_report),
+                    })
+                elif integration_gate["required"] and not integration_gate["passed"]:
                     self._record_learning_review(db, task, "product_gate", new_id("gate"),
                         {"observation": "failed", "gate": "integration", "report": integration_gate})
                     acceptance_result = AcceptanceResult(
@@ -5034,7 +5105,7 @@ class Orchestrator:
                     db.commit()
                     return
             if acceptance_result.verdict == "blocked":
-                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump()})
+                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump(), **scene_result})
                 block_report = self._build_block_report(task, acceptance_result.reason, "acceptance.blocked", acceptance_envelope.payload)
                 suppression = blockers.blocked_recovery_suppression(
                     block_report,
@@ -5105,7 +5176,7 @@ class Orchestrator:
                 if not child_ids:
                     return
             elif acceptance_result.verdict == "visual_uncertain":
-                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump()})
+                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump(), **scene_result})
                 if acceptance_result.suggested_children:
                     child_ids = self._create_children(db, task, acceptance_result.suggested_children)
                     self._add_event(
@@ -5131,7 +5202,7 @@ class Orchestrator:
                 repair_cycle_limit = self._acceptance_repair_cycle_limit()
                 repair_count = self._acceptance_repair_count(db, task.id)
                 if repair_cycle_limit > 0 and repair_count >= repair_cycle_limit:
-                    task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump()})
+                    task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump(), **scene_result})
                     meta = loads(task.node_meta_json, {})
                     meta["manual_review_reason"] = "acceptance_repair_cycle_limit"
                     meta["acceptance_repair_cycles"] = repair_count
@@ -5156,7 +5227,7 @@ class Orchestrator:
                     )
                 else:
                     child_ids = self._create_children(db, task, acceptance_result.suggested_children)
-                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump()})
+                task.result_json = dumps({"accepted_children": [child["id"] for child in child_payloads], "acceptance": acceptance_result.model_dump(), **scene_result})
                 if child_ids:
                     self._mark(db, task, TaskStatus.WAITING_CHILDREN, "父节点整合验收要求新增修复子任务。")
                 else:

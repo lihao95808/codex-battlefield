@@ -1,12 +1,89 @@
 # 计划状态与断点续跑锚点
 
 > 用途：任何会话中断（聊天被打断、窗口断连、换天继续）后，**从本文件恢复**，不要依赖对话记忆。
-> 最后更新：2026-09-21
+> 最后更新：2026-10-19（3D 真实闭环；以下较早章节保留历史证据）
 
 > **读之前先看这条**：本文件 §2 及之后是 **W4（模块化搬移）那一轮**的记录，里面的行数、用例数、
 > 波次状态都是**当时的读数**，不是今天的。恢复会话时**不要**拿这里的数字当基线去判断"环境坏了"——
 > 正确做法是跑下面的命令拿到**当时的真实数字**，再和 `README.md` 的「跑测试」一节对齐；
 > 两者不一致就以实测为准，并把本文件与 README 一起改到事实。
+
+## scene3d M1 库内规则落地（2026-10-19）
+
+SPEC 复审后发现 10 处矛盾/缺口并全部修入 `docs/spec-scene3d-recursion.md`：
+LCA 责任域与执行者、scope `importance`/`connectivity` 字段、单一上限来源、
+检查域与合法参数域相容（R-C7）、每项检查的负样本（R-C8）、旧 v1 快照兼容、
+报告字段契约、精度出口显式 `not_evaluated`、里程碑归属。
+
+M1 已实现：v2-r2 `schema_revision` 强校验、scope 单根树校验、责任域按 LCA 计算、
+`requires_slots`/`coordinate_slot` 分离、坐标系从完整冻结声明解析、
+叶子必须有内在检查、确定性 merge 与中间装配输出（原子发布）、
+旧 `manifest` 快照归一化、`degeneration_guard` 与精度出口分离、上限严格正整数。
+
+实测：scene3d 全套 **101 passed**；后端全量 **2054 passed / 4 skipped**（一次 xdist 偶发，
+单跑与重跑均通过，记录在案）。ruff 通过；54 份 Markdown 排版 0 问题。
+
+**M1 仍缺**：R-C7 冻结期域角点抽样、R-C8 冻结期负样本生成（规则已写，代码未做）。
+**未开始**：M1b（编排器 scope 绑定与 receipt）、M2（精度计划编译与事前预算）、M3（UI）、M4（真实分件递归运行）。
+
+## scene3d 递归分件 v2 计划已入 spec（2026-10-19，历史）
+
+下一阶段计划写进 `docs/spec-scene3d-recursion.md`（槽位子集契约、确定性 merge、
+冻结精度出口、GUI 指标卡、真实分件运行）。当前为**计划文档**，不是已实现的事实。
+开发顺序见该文件 §9。
+
+## scene3d 强制门禁与真实任务完成（2026-10-19）
+
+已将显式 `scene3d.contract.json` 在开树时冻结，以 root 绑定；
+叶子 verifier pass 和父 acceptance pass 均需独立几何硬门禁，异常不得 DONE。
+父节点没有 worktree 时检查真正 integration target；叶子不可回退 seed。
+新增 `scripts/real_scene3d_probe.py`：独立配置/数据库/CODEX_HOME/目标 Git，
+不下发参考 parts，保持延迟调度器活跃，内层 480 秒、外层 540 秒上限。
+
+**真实成功根 `root-71c57668cd`：DONE，183.95 秒，5 次真实模型 run**：
+根/叶 planner、worker、verifier 使用 `deepseek-flash`；父 acceptance 使用 `gpt-6.1-sol`。
+28 项特征 + 强制连通通过，叶子/父各有 `scene3d_gate.passed`；
+PNG 900×620、646,347 字节，GLB 34,476 字节，模型生成脚本与文档已集成。
+1 次 synthetic acceptance 不计入真实模型 run。宪法使用产品固定模板，不计模型起草。
+
+过程中保留了真实失败：Windows shell 沙箱拒绝、150 秒 worker 超时、
+一次调度返回时测试进程提前退出。修复包括模型 catalog、Flash 合法 none 推理档、
+紧凑 describe 入口、PowerShell 调用前缀与延迟调度生命周期。
+成功测试仅隔离工程采用 danger-full-access，未改用户全局设置，未导入当前 GUI。
+
+全量后端 **2024 passed / 4 skipped**（107.55 秒）；硬门禁专项 23 passed。
+**仍未完成**：深层槽位子集委派、通用全局精度门禁、专用 HTTP/UI；
+本例不能外推成任意复杂世界已可自动收敛。见 `docs/spec-scene3d.md`。
+
+## scene3d runner 接线与判据复核（2026-10-19，历史阶段）
+
+worker/verifier/acceptance 的 3D 任务提示词已投递独立 scene3d 工具；普通任务不注入。
+修复空检查通过、非有限数、声明浅拷贝、AABB 伪连通、连通结果未进入总判定、
+旧渲染产物误认与 GLB 面绕序等缺口。新增可重放集成脚本 `scripts/verify_scene3d_runtime.py`。
+
+针对性验证 77 passed；全量后端 1997 passed / 4 skipped，106.71 秒，退出码 0；ruff 通过。
+真实投递工具调用 Blender 烟测 3.78 秒，退出码 0，
+PNG 646,043 字节（900×620），已查看画面。输入为参考填写，不是模型生成。
+**仍未完成**：编排器自动强制几何门禁、HTTP/UI、真实 Flash 任务树与递归精度出口。
+
+## scene3d 能力包（2026-10-19）
+
+切片 1：把"3D 场景能不能判"做成战场仓库里的确定性工具，而不是某次会话里的临时脚本。
+
+- 实体模型：**一组轴对齐实心盒**（洞在 builder 里分解成盒带，不做 CSG 减法）。
+  点内测试 / 体积 / GLB 导出都变成常数级，无需 numpy / trimesh / manifold3d。
+- 声明（L0 只读契约）：20 个槽位 + 28 条特征校验（校验清单是数据不是代码）+ 自由参数域。
+- 两道判定：`validate_parts`（合规，结构化拒绝 `{slot, field, expected, actual, rule}`）
+  与 `run_checks`（几何特征采样）；两条都 fail closed，采不到样本判失败。
+- 渲染：纯标准库 GLB → Blender 5.2 无头渲染，**逐张核对 PNG 存在且 ≥5000 字节**（退出码 0 不算成功）。
+- CLI：`python -m app.scene3d declaration|reference|validate|metrics|render`，
+  退出码只有 0/2/3 三种。
+
+实测（本机，2026-10-19）：参考填写 20 槽位 = 138 盒 / 484.8 m³；`validate` 28 条特征全绿 116 ms；
+`metrics` 对参考答案 IoU 1.0；`render --views hero` 输出 PNG 643,853 B。
+
+**未做（明确边界）**：没有接进编排器门禁、没有 HTTP 端点、前端没有指标卡/图墙、
+还没有任何真实模型填写经过这套判据。详见 `docs/spec-scene3d.md` §7。
 
 ## IDE 布局（2026-10-19）
 

@@ -29,16 +29,23 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
+
+_TEST_DIR = Path(__file__).resolve().parent
+if str(_TEST_DIR) not in sys.path:
+    # 同目录模块按文件位置可导入：`from tests.xxx import ...` 只在 cwd=api 时成立，
+    # 从仓库根跑 `pytest api/tests/...` 会 ImportError（实测）。这里不改变判据，只去掉对 cwd 的依赖。
+    sys.path.insert(0, str(_TEST_DIR))
 
 from app.config import Settings
 from app.database import SessionLocal, init_db
 from app.models import TaskNode
 from app.orchestrator import Orchestrator
 from app.runner import CodexExecRunner
-from tests.fake_responses_gateway import FakeResponsesGateway
+from fake_responses_gateway import FakeResponsesGateway
 
 # 平台各自的"真实 CLI"：POSIX 上如果挑到 Windows 的 `codex.cmd`（在 /mnt/c 的 PATH 里
 # 很常见），`create_subprocess_exec` 会得到 `Exec format error`，五条判据会一起红 ——
