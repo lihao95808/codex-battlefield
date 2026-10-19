@@ -30,7 +30,8 @@ async function prepareConstitution(page: import('@playwright/test').Page, goal: 
   await expect(goalBox).toBeVisible();
   await goalBox.fill(goal);
 
-  // 运行模式选"模拟"：这条 E2E 不许碰真实 CLI（CI 上没有）。
+  // 运行方式移入按需展开的运行选项；E2E 仍明确选择 mock，不碰真实 CLI。
+  await page.locator('summary').filter({ hasText: '运行选项' }).click();
   await page.getByRole('button', { name: '模拟', exact: true }).click();
 
   await page.getByRole('button', { name: '生成草案' }).click();
@@ -43,6 +44,44 @@ async function prepareConstitution(page: import('@playwright/test').Page, goal: 
 }
 
 test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断', () => {
+  test('左栏默认聚焦目标，工具按需展开且收起不丢输入', async ({ page }) => {
+    const requests: string[] = [];
+    page.on('request', (request) => requests.push(new URL(request.url()).pathname));
+    await page.goto('/');
+    const rail = page.locator('.left-rail');
+    await expect(rail.locator('#goal')).toBeVisible();
+    await expect(rail.getByRole('button', { name: '生成草案' })).toBeVisible();
+    await expect(rail.locator('.rail-tools > details')).toHaveCount(4);
+    await expect(rail.locator('.rail-tools .rail-disclosure[open]')).toHaveCount(0);
+    await expect(rail.locator('#targetPath')).toHaveCount(0);
+    await expect(rail.locator('details.preauth-panel')).toHaveCount(0);
+    await expect.poll(() => requests.includes('/api/steward/alerts/stream')).toBe(true);
+    expect(requests).not.toContain('/api/auto-policy');
+    expect(requests).not.toContain('/api/cost');
+    await page.screenshot({ path: 'test-results/left-rail-simplified.png', fullPage: true });
+
+    const options = rail.locator('summary').filter({ hasText: '运行选项' });
+    await options.click();
+    await rail.locator('#targetPath').fill('D:\\work\\kept-draft');
+    await options.click();
+    await expect(rail.locator('#targetPath')).not.toBeVisible();
+    await options.click();
+    await expect(rail.locator('#targetPath')).toHaveValue('D:\\work\\kept-draft');
+
+    const projectSummary = rail.locator('summary').filter({ hasText: '工程绑定' });
+    const projectGroup = projectSummary.locator('..');
+    if (!(await projectGroup.getAttribute('open') === '')) await projectSummary.click();
+    await rail.locator('.onb-input').fill('D:\\work\\local-form-draft');
+    await projectSummary.click();
+    await projectSummary.click();
+    await expect(rail.locator('.onb-input')).toHaveValue('D:\\work\\local-form-draft');
+
+    const authorization = rail.locator('summary').filter({ hasText: '管家与授权' });
+    await authorization.focus();
+    await authorization.press('Enter');
+    await expect(rail.locator('details.preauth-panel')).toBeVisible();
+    await expect(authorization).toBeFocused();
+  });
   test('后端在隔离端口上活着，并给出可关联的 request id', async ({ request }) => {
     const response = await request.get('/api/health');
     expect(response.ok()).toBeTruthy();
@@ -58,7 +97,7 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
     await page.goto('/');
     // 引导面板要么给出"绑定输入框 + 按钮"，要么已经绑定好了（上一轮跑过）。
     const onboarding = page.getByRole('button', { name: '绑定', exact: false }).first();
-    const boundHint = page.getByText('当前', { exact: true }).first();
+    const boundHint = page.locator('summary').filter({ hasText: '已绑定 · 切换工程' });
     await expect(onboarding.or(boundHint)).toBeVisible({ timeout: 30_000 });
   });
 
@@ -82,6 +121,7 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
     await page.goto('/');
     await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30_000 });
 
+    await page.locator('summary').filter({ hasText: '管家与授权' }).click();
     const panel = page.locator('details.preauth-panel').first();
     await expect(panel).toBeVisible({ timeout: 30_000 });
     // 面板是 `<details>`，内容要先展开才看得见复选框。

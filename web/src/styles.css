@@ -5376,3 +5376,32 @@ select:focus {
   color: #822727;
   background: #fffafa;
 }
+
+/* 左栏渐进展开：常用动作在前，辅助工具按用途归组。 */
+.left-rail .brand { gap: 8px; margin-bottom: 18px; }
+.left-rail .brand-mark { flex-shrink: 0; width: 34px; height: 34px; }
+.left-rail h1 { font-size: 16px; }
+.left-rail .brand p { font-size: 11px; }
+.left-rail #goal { min-height: 104px; }
+.left-rail .constitution-markdown { min-height: 120px; max-height: 220px; }
+.left-rail .constitution-hash { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.left-rail [data-testid="stat-grid-primary"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rail-mode-note { color: #687684; font-size: 12px; }
+.rail-warning { padding: 8px; margin: 8px 0; background: #fff4df; color: #785320; border-radius: 6px; font-size: 12px; }
+.rail-attention:empty { display: none; }
+.left-rail .brand > div:nth-child(2) { min-width: 0; }
+.left-rail .brand p { display: none; }
+.rail-tools { margin-top: 16px; border-top: 1px solid #dce3e8; padding-top: 8px; }
+.rail-disclosure { margin-bottom: 8px; border: 1px solid #dce3e8; border-radius: 8px; background: #fff; }
+.rail-disclosure > summary {
+  display: flex; align-items: center; gap: 8px; padding: 10px;
+  cursor: pointer; list-style: none; color: #41505d; font-size: 13px; font-weight: 600;
+}
+.rail-disclosure > summary::-webkit-details-marker { display: none; }
+.rail-disclosure > summary::before { content: '›'; font-size: 18px; line-height: 1; }
+.rail-disclosure[open] > summary::before { transform: rotate(90deg); }
+.rail-disclosure > summary > small { margin-left: auto; font-size: 10px; font-weight: 400; color: #687684; }
+.rail-disclosure > summary:hover { background: #f3f7fa; border-radius: 8px; }
+.rail-disclosure > summary:focus-visible { outline: 2px solid #1d556f; outline-offset: 2px; }
+.rail-disclosure-body { display: grid; gap: 10px; padding: 0 10px 10px; }
+.rail-disclosure-body > :last-child { margin-bottom: 0; }

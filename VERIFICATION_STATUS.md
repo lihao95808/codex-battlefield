@@ -6,7 +6,22 @@
 > 用例规模此后长了很多（当前规模见 `README.md` 的「跑测试」一节）。那里保留原文不改数字——
 > 它记的是"那天跑过什么"，改成今天的数字就不再是证据了。
 
-## 2026-09-24（A6）浏览器 console = 0：从"推理"变成"测量"（最新一次）
+## 2026-10-19 左栏交互精简
+
+实现：`web/src/LeftRail.tsx`、`RailDisclosure.tsx`、`RailAttention.tsx`。
+四组辅助工具按需展开，常用目标 / 边界流程仍可直接操作；绑定表单保留稳定实例，
+告警与工程快照失配不随折叠隐藏，管家不再抢键盘焦点。
+
+前端分组门禁已两次通过：221 单测 + 8 条真浏览器 E2E（其中一条新增侧栏交互判据），
+lint 为 0 errors / 13 既有 warnings，TypeScript / Vite 构建通过。
+千节点首屏两次 cold 1808ms / 3342ms，warm 1547ms / 1486ms；棘轮通过，不宣称 2 秒稳定达标。
+全量首次遇到三条既有 `test_steward.py` 外键清理失败，已改为每用例独立测试库；
+不跳过断言也不关闭外键（fixture 断言 `PRAGMA foreign_keys=1`）。该文件单跑 15 passed。
+最终 `scripts/verify_all.py` 全量退出码 0：后端 1766 passed / 3 skipped，前端 221 passed，
+浏览器 E2E 8 passed，构建通过。最终千节点 cold 1627ms / warm 1431ms，
+服务端取树 344–393ms；记录是这次的测量，不保证所有负载下均小于 2 秒。
+
+## 2026-09-24（A6）浏览器 console = 0：从"推理"变成"测量"（历史记录）
 
 > 这一节记"用真 Chrome 把长期挂着**未验证**的 A6 测掉"这一轮。零 token。
 > 与下面几节并列，不覆盖。量具：`scripts/verify_browser_console.py`（headless Chrome + CDP）。

@@ -13,13 +13,18 @@
 """
 from __future__ import annotations
 
+from collections.abc import Generator
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app import steward
 from app.config import get_settings
-from app.database import SessionLocal, init_db
-from app.models import StewardMessage, TaskNode, TaskStatus, utcnow
+from app.database import get_db
+from app.models import Base, TaskNode, TaskStatus, utcnow
 from app.steward_capabilities import CAPABILITIES, catalog, mutating_names
 from app.steward_status import MAX_OUTLINE_NODES, build_status
 from app.steward import parse_chat
@@ -30,6 +35,24 @@ def _settings(**overrides):
     fields = {f: getattr(base, f) for f in base.__dataclass_fields__}
     fields.update(overrides)
     return base.__class__(**fields)
+
+
+@pytest.fixture(scope="function")
+def session_factory(tmp_path: Path) -> Generator[sessionmaker[Session], None, None]:
+    """Use a fresh database, not bulk DELETEs against other tests' FK-linked state."""
+    engine = create_engine(
+        f"sqlite:///{(tmp_path / 'steward.sqlite3').as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        # Importing get_db registers the production Engine connect hook, including FK enforcement.
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+        Base.metadata.create_all(bind=engine)
+        yield factory
+    finally:
+        engine.dispose()
 
 
 # ---------- S1 权限声明 ----------
@@ -74,16 +97,12 @@ def test_s1_every_capability_declares_its_effect() -> None:
 # ---------- S2 快照不编 ----------
 
 
-def test_s2_snapshot_is_honest_about_missing_usage() -> None:
+def test_s2_snapshot_is_honest_about_missing_usage(session_factory: sessionmaker[Session]) -> None:
     """空库上用量必须报 `available: false`，**不能**填 0。
 
     填 0 会被读成"没花钱"，而真相是"没有数据"—— 用户会基于它做决定。
     """
-    init_db()
-    with SessionLocal() as db:
-        # 清掉本会话的对话，保证从干净状态看快照
-        db.query(StewardMessage).delete()
-        db.commit()
+    with session_factory() as db:
         snapshot = build_status(db, _settings())
 
     assert snapshot["usage"]["available"] is False, "空库不该声称有用量数据"
@@ -91,13 +110,12 @@ def test_s2_snapshot_is_honest_about_missing_usage() -> None:
     assert "state_home" in snapshot["tool"]
 
 
-def test_s2_snapshot_shape_is_stable() -> None:
+def test_s2_snapshot_shape_is_stable(session_factory: sessionmaker[Session]) -> None:
     """快照的顶层键是**给 agent 的契约**，不能悄悄变。
 
     变了而没人知道 -> agent 会去读一个不存在的字段，然后编一个值出来。
     """
-    init_db()
-    with SessionLocal() as db:
+    with session_factory() as db:
         snapshot = build_status(db, _settings())
 
     for key in ("tool", "counts", "blocked_nodes", "usage", "recent_events", "outline"):
@@ -145,18 +163,13 @@ def test_s3_valid_payload_passes_through() -> None:
 # ---------- S4 截断要说出来 ----------
 
 
-def test_s4_outline_truncation_is_reported() -> None:
+def test_s4_outline_truncation_is_reported(session_factory: sessionmaker[Session]) -> None:
     """轮廓被截断时必须给出 `outline_truncated` 与省略数量。
 
     否则 agent 会以为"这就是整棵树"，进而做出"树已经完整/没有遗漏"的错误结论。
     这里直接构造一个超过上限的树来验证 —— 不能只测空库那种恒真情形。
     """
-    init_db()
-    with SessionLocal() as db:
-        db.query(TaskNode).delete()
-        db.query(StewardMessage).delete()
-        db.commit()
-
+    with session_factory() as db:
         # 造 MAX_OUTLINE_NODES + 5 个平铺节点（都挂在 None 下）
         for index in range(MAX_OUTLINE_NODES + 5):
             db.add(
@@ -179,16 +192,10 @@ def test_s4_outline_truncation_is_reported() -> None:
         assert snapshot["outline_truncated"] is True, "截断了却没说"
         assert snapshot["outline_omitted"] == snapshot["counts"]["total"] - len(snapshot["outline"])
 
-        db.query(TaskNode).delete()
-        db.commit()
 
-
-def test_s4_no_truncation_flag_when_everything_fits() -> None:
+def test_s4_no_truncation_flag_when_everything_fits(session_factory: sessionmaker[Session]) -> None:
     """对照：没截断时标志必须是 false。"""
-    init_db()
-    with SessionLocal() as db:
-        db.query(TaskNode).delete()
-        db.commit()
+    with session_factory() as db:
         snapshot = build_status(db, _settings())
         assert snapshot["outline_truncated"] is False
         assert snapshot["outline_omitted"] == 0
@@ -197,11 +204,8 @@ def test_s4_no_truncation_flag_when_everything_fits() -> None:
 # ---------- 对话落库与历史 ----------
 
 
-def test_history_renders_in_speaking_order() -> None:
-    init_db()
-    with SessionLocal() as db:
-        db.query(StewardMessage).delete()
-        db.commit()
+def test_history_renders_in_speaking_order(session_factory: sessionmaker[Session]) -> None:
+    with session_factory() as db:
         steward.append_message(db, role=steward.ROLE_USER, content="第一句")
         steward.append_message(db, role=steward.ROLE_STEWARD, content="第二句")
 
@@ -211,13 +215,9 @@ def test_history_renders_in_speaking_order() -> None:
     assert text.index("用户：第一句") < text.index("管家：第二句"), "历史顺序反了"
 
 
-def test_clear_history_only_clears_the_conversation() -> None:
+def test_clear_history_only_clears_the_conversation(session_factory: sessionmaker[Session]) -> None:
     """清空对话**不能**顺手动树 —— 用户说"忘掉我们聊的"，不是"把活删了"。"""
-    init_db()
-    with SessionLocal() as db:
-        db.query(StewardMessage).delete()
-        db.query(TaskNode).delete()
-        db.commit()
+    with session_factory() as db:
         db.add(
             TaskNode(
                 id="keepme",
@@ -236,19 +236,27 @@ def test_clear_history_only_clears_the_conversation() -> None:
         assert removed >= 1
         assert db.get(TaskNode, "keepme") is not None, "清对话把树也删了"
 
-        db.query(TaskNode).delete()
-        db.commit()
-
 
 # ---------- 端点接线 ----------
 
 
 @pytest.fixture()
-def client() -> TestClient:
+def client(
+    session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch,
+) -> Generator[TestClient, None, None]:
     from app.main import app
 
-    init_db()
-    return TestClient(app)
+    def isolated_db() -> Generator[Session, None, None]:
+        with session_factory() as db:
+            yield db
+
+    # Keep the real endpoint dependency wiring; restore any previous override on teardown.
+    monkeypatch.setitem(app.dependency_overrides, get_db, isolated_db)
+    test_client = TestClient(app)
+    try:
+        yield test_client
+    finally:
+        test_client.close()
 
 
 def test_endpoints_chat_roundtrip_and_persist(client: TestClient) -> None:
@@ -257,11 +265,6 @@ def test_endpoints_chat_roundtrip_and_persist(client: TestClient) -> None:
     用 mock runner（默认 `CODEX_BATTLEFIELD_RUNNER=mock`），
     所以这里测的是**接线与落库**，不是模型质量。
     """
-    init_db()
-    with SessionLocal() as db:
-        db.query(StewardMessage).delete()
-        db.commit()
-
     response = client.post("/api/steward/chat", json={"message": "状态怎么样？"})
     assert response.status_code == 200, response.text
     body = response.json()

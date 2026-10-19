@@ -5,6 +5,8 @@
  * 所以它们吃**一个** `view` prop —— 改动最小、也最容易看出"没改行为"。
  */
 import { useBattlefieldController } from './useBattlefieldController';
+import { RailDisclosure } from './RailDisclosure';
+import { RailAttention } from './RailAttention';
 
 type View = ReturnType<typeof useBattlefieldController>;
 import { Stat } from './uiPrimitives';
@@ -50,6 +52,8 @@ export function LeftRail({ view }: { view: View }) {
           <section className="panel">
             <label htmlFor="goal">导航目标</label>
             <textarea id="goal" value={view.goal} onChange={(event) => view.setGoal(event.target.value)} />
+            <div className="rail-mode-note">运行方式：{view.runnerMode === 'real' ? '真实 Codex' : '模拟'}</div>
+            <RailDisclosure title="运行选项" hint="路径与运行方式">
             <label htmlFor="targetPath">目标路径（高级模式）</label>
             <input
               id="targetPath"
@@ -65,12 +69,13 @@ export function LeftRail({ view }: { view: View }) {
                 真实 Codex
               </button>
             </div>
-            <p className="input-hint">L4 入口只提交目标文本；系统会自动生成边界、拆解路径、调度 Codex agent，并把执行进度映射到画布。</p>
+            </RailDisclosure>
+            <p className="input-hint">写下目标 → 确认边界 → 启动任务。</p>
           </section>
   
           <section className="panel constitution-editor" aria-label="项目宪法编辑">
             <div className="panel-row">
-              <label htmlFor="constitutionMarkdown">项目宪法</label>
+              <label htmlFor="constitutionMarkdown">任务边界（项目宪法）</label>
               <span className={`constitution-chip ${view.activeConstitution?.status ?? 'empty'}`}>
                 {view.constitutionLocked ? '已锁定' : view.activeConstitution ? '草案' : '未生成'}
               </span>
@@ -80,10 +85,7 @@ export function LeftRail({ view }: { view: View }) {
                 <FileText size={15} />
                 生成草案
               </button>
-              <button className="secondary" onClick={view.onSaveConstitution} disabled={view.busy || !view.canEditConstitution} type="button" title="保存宪法修订">
-                <RefreshCw size={15} />
-                保存修订
-              </button>
+
             </div>
             {view.activeConstitution ? (
               <>
@@ -94,6 +96,7 @@ export function LeftRail({ view }: { view: View }) {
                   onChange={(event) => view.setConstitutionMarkdown(event.target.value)}
                   disabled={!view.canEditConstitution}
                 />
+                <RailDisclosure title="编辑结构化边界" hint="高级修订">
                 <label htmlFor="constitutionData">结构化边界</label>
                 <textarea
                   id="constitutionData"
@@ -102,6 +105,10 @@ export function LeftRail({ view }: { view: View }) {
                   onChange={(event) => view.setConstitutionDataText(event.target.value)}
                   disabled={!view.canEditConstitution}
                 />
+                </RailDisclosure>
+                <button className="secondary" onClick={view.onSaveConstitution} disabled={view.busy || !view.canEditConstitution} type="button" title="保存宪法修订">
+                  <RefreshCw size={15} />保存修订
+                </button>
                 <div className="constitution-actions">
                   <button className="secondary" onClick={view.onLockConstitution} disabled={view.busy || !view.canEditConstitution} type="button" title="锁定项目宪法">
                     <ShieldCheck size={15} />
@@ -122,11 +129,10 @@ export function LeftRail({ view }: { view: View }) {
                   v{view.activeConstitution.version} · {view.activeConstitution.content_hash}
                 </code>
               </>
-            ) : (
-              <div className="constitution-empty">等待草案</div>
-            )}
+            ) : null}
           </section>
   
+          <RailDisclosure title="画布显示" hint="筛选与层级">
           <section className="panel">
             <label htmlFor="filter">视图</label>
             <div className="select-wrap">
@@ -191,15 +197,14 @@ export function LeftRail({ view }: { view: View }) {
                 全部
               </button>
             </div>
-            {/* 长列表虚拟化：被窗口挡掉多少必须**说出来**（见 docs/frontend-split.md §5）。
-                不说的话，用户会以为树就这么多 —— 悄悄丢节点比慢更坏。 */}
-            {view.windowNotice && (
-              <p className="depth-note" data-testid="virtualization-notice">
-                画布渲染 {view.renderedTaskCount} 个节点。{view.windowNotice}
-              </p>
-            )}
+
           </section>
   
+          </RailDisclosure>
+          {/* 省略窗口的告知始终可见，不能跟着显示设置一起藏起来。 */}
+          {view.windowNotice && <p className="depth-note" data-testid="virtualization-notice">
+            画布渲染 {view.renderedTaskCount} 个节点。{view.windowNotice}
+          </p>}
           <section className="stat-grid" aria-label="战场统计主项" data-testid="stat-grid-primary">
             <Stat label="总数" value={statNumber(view.visibleStats, 'total')} />
             <Stat label="完成" value={statNumber(view.visibleStats, 'done')} />
@@ -208,22 +213,15 @@ export function LeftRail({ view }: { view: View }) {
               value={`${view.visibleActiveSlots}/${view.visibleSlotCapacity}`}
               title="真实正在占用 Codex CLI 的并发槽位。"
             />
-            <Stat label="运行节点" value={statNumber(view.visibleStats, 'active_agent_statuses', statNumber(view.visibleStats, 'active_agents'))} title="数据库中处于执行/验收/整合状态的节点；真实消耗以 Codex 槽位为准。" />
-            <Stat label="并发上限" value={statNumber(view.visibleStats, 'max_concurrency', 1)} />
-            <Stat
-              label="自动油门"
-              value={`${autoConcurrencyLabel(statText(view.visibleStats, 'auto_concurrency_mode', 'pending'))} ${statNumber(
-                view.visibleStats,
-                'auto_concurrency_min',
-                1,
-              )}-${statNumber(view.visibleStats, 'auto_concurrency_max', 1)}`}
-              title={statText(view.visibleStats, 'auto_concurrency_reason', '等待下一次调度评估。')}
-            />
+
           </section>
   
           <details className="stat-more">
             <summary>更多指标（模型、预算、状态细分）</summary>
             <section className="stat-grid" aria-label="战场统计其余项">
+              <Stat label="运行节点" value={statNumber(view.visibleStats, 'active_agent_statuses', statNumber(view.visibleStats, 'active_agents'))} />
+              <Stat label="并发上限" value={statNumber(view.visibleStats, 'max_concurrency', 1)} />
+              <Stat label="自动油门" value={autoConcurrencyLabel(statText(view.visibleStats, 'auto_concurrency_mode', 'pending'))} title={statText(view.visibleStats, 'auto_concurrency_reason', '等待下一次调度评估。')} />
               <Stat label="Codex 模型" value={statText(view.visibleStats, 'codex_model')} />
               <Stat label="推理档位" value={statText(view.visibleStats, 'codex_reasoning_effort')} />
               <Stat label="Goal 模式" value={statNumber(view.visibleStats, 'goal_mode') ? '长跑' : '保守'} />
@@ -264,69 +262,44 @@ export function LeftRail({ view }: { view: View }) {
             </section>
           </details>
   
-          {/*
-            ⚠️ 首屏**不**挂这两个重面板，等树到位再挂（2026-10-17 实测）：
-            千节点下 `/api/auto-policy` 要 **1.34 秒**、`/api/watchdog/state` 要 **1.30 秒**，
-            而首屏同时会打 ~15 个 API（它们都在 414–419ms 那一瞬间发出）。同进程里
-            Python 的 CPU 密集 handler 被 GIL 串起来，于是**关键路径上的 `/api/tree`
-            被这两个面板挤到 2.3 秒**（服务端空闲时同一棵树只要 0.24–0.3 秒）。
-            判据 `web/e2e/perf-first-screen.spec.ts` 的拆解把这条链量出来了
-            （`api_requests` 里那两条 1.3 秒的请求 + 树请求的 `wait_ms`）。
-            树到位后再挂，面板内容一样会出来，只是晚几十毫秒。
-          */}
-          {view.tree?.tasks.length ? (
-            <>
+          <RailDisclosure title="工程绑定" hint={view.layoutState?.bound ? '已绑定 · 切换工程' : '未绑定 · 可选'}
+            keepMounted forceOpen={Boolean(view.layoutState && !view.layoutState.bound)}>
+            <ProjectOnboarding onBound={() => view.loadTree().catch(() => undefined)} />
+          </RailDisclosure>
+          <RailAttention layout={view.layoutState} />
+          <div className="rail-tools" aria-label="更多工具">
+            <RailDisclosure title="工程与设置" hint="配置、数据维护">
+              <SettingsPanel />
+              <StateAdminPanel />
+              <GlossaryPanel />
+            </RailDisclosure>
+            <RailDisclosure title="管家与授权" hint="对话、审批、看门狗">
+              <StewardPanel layout={view.layoutState} onOpen={() => view.loadTree().catch(() => undefined)} />
+              <PreAuthPanel />
+              <CoordinationPanel />
               <WatchdogPanel
-                state={view.watchdogState}
-                layout={view.layoutState}
-                busy={view.busy}
-                result={view.watchdogResult}
-                onInstall={view.onInstallWatchdog}
-                onRunOnce={view.onRunWatchdogOnce}
-                onToggleDrain={view.onToggleApiRestartDrain}
+                state={view.watchdogState} layout={view.layoutState} busy={view.busy}
+                result={view.watchdogResult} onInstall={view.onInstallWatchdog}
+                onRunOnce={view.onRunWatchdogOnce} onToggleDrain={view.onToggleApiRestartDrain}
               />
-
-              <CrossProjectPanel />
-
-              <CostPanel />
-
               <PolicyPanel />
-            </>
-          ) : null}
-
-          {/* 绑定引导**不能**跟着上面那个门走：它就是给"还没有树"的状态用的。 */}
-          <ProjectOnboarding onBound={() => view.loadTree().catch(() => undefined)} />
-  
-          <PreAuthPanel />
-  
-          <ConclusionPanel />
-  
-          <DeliveryPanel />
-  
-          <MetricsPanel />
-  
-          <CoordinationPanel />
-  
-          <StateAdminPanel />
-  
-          <GlossaryPanel />
-  
-          <RunInspector taskId={view.selectedId} />
-  
-          <SettingsPanel />
-  
-          <StewardPanel layout={view.layoutState} onOpen={() => view.loadTree().catch(() => undefined)} />
-  
-          <ConstitutionPanel
-            constitution={view.activeConstitution}
-            board={constitutionBoardFromStats(view.treeIsStale ? undefined : view.tree?.stats)}
-          />
-  
-          <ObligationBoardPanel board={obligationBoardFromStats(view.treeIsStale ? undefined : view.tree?.stats)} />
-  
-          <ObligationIndexPanel board={view.obligationIndex} />
-  
-          <EventTicker events={view.treeIsStale ? [] : (view.tree?.events ?? [])} />
+            </RailDisclosure>
+            <RailDisclosure title="进度与成本" hint="投递、费用、跨工程">
+              <DeliveryPanel />
+              <CostPanel />
+              <CrossProjectPanel />
+              <ConclusionPanel />
+            </RailDisclosure>
+            <RailDisclosure title="日志与诊断" hint="运行记录、指标、约束">
+              <RunInspector taskId={view.selectedId} />
+              <MetricsPanel />
+              <ConstitutionPanel constitution={view.activeConstitution}
+                board={constitutionBoardFromStats(view.treeIsStale ? undefined : view.tree?.stats)} />
+              <ObligationBoardPanel board={obligationBoardFromStats(view.treeIsStale ? undefined : view.tree?.stats)} />
+              <ObligationIndexPanel board={view.obligationIndex} />
+              <EventTicker events={view.treeIsStale ? [] : (view.tree?.events ?? [])} />
+            </RailDisclosure>
+          </div>
   
           {view.error && <div className="error">{view.error}</div>}
         </aside>

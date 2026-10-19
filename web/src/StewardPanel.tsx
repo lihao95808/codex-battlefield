@@ -431,7 +431,6 @@ export function StewardPanel({
                 className="steward-input"
                 placeholder="跟管家说点什么…"
                 rows={2}
-                autoFocus
               />
               <div className="steward-composer-actions">
                 <button type="button" className="secondary" onClick={onClear} title="清空对话（不动任务树）">
