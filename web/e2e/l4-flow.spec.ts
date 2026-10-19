@@ -81,6 +81,12 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
     await authorization.press('Enter');
     await expect(rail.locator('details.preauth-panel')).toBeVisible();
     await expect(authorization).toBeFocused();
+    expect(requests).not.toContain('/api/learning/records');
+    await rail.locator('summary').filter({ hasText: '日志与诊断' }).click();
+    const experienceSummary = rail.locator('summary').filter({ hasText: '经验与外部记忆' });
+    await experienceSummary.click();
+    await expect.poll(() => requests.includes('/api/learning/records')).toBe(true);
+    await expect(rail.getByText('提供方：', { exact: false })).toBeVisible();
   });
   test('后端在隔离端口上活着，并给出可关联的 request id', async ({ request }) => {
     const response = await request.get('/api/health');

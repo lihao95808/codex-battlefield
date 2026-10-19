@@ -6,6 +6,24 @@
 > 用例规模此后长了很多（当前规模见 `README.md` 的「跑测试」一节）。那里保留原文不改数字——
 > 它记的是"那天跑过什么"，改成今天的数字就不再是证据了。
 
+## 2026-10-19 父节点经验检索与复盘
+
+复用 OpenViking 0.5.0，战场 SQLite 只做快照与投递账。规划第一次调用前读取相关经验，
+向下继承当时 URI / 内容 / 哈希；父节点整合与验收分别留下事实和原因假设。
+外部默认关闭，不读取个人聊天记忆配置；明确 user 范围，peer 不是授权隔离。
+
+隔离真实库测试：原生 Windows + 本地 GGUF embedding + 兼容端点的合成材料提取出
+一条 CSV 经验，重启后内容仍在；另两轮完成但零经验，未把 completed 当 learned。
+真实 peer-only 管线不工作，已纠正为独立 user；开发模式跨用户显式读取仍可成功，
+生产用户 key 的 ACL 尚未实测。中文文件名适配缺陷也由真实回放发现并修正。
+这些只验证存储 / 提取 / 检索，不证明游戏任务能力提升。详见 `docs/parent-learning.md`。
+
+阶段完整门禁通过：1914 passed / 3 skipped，前端 232 passed，E2E 8 passed，build 通过。
+最终门禁复验退出码 0：1929 passed / 3 skipped，前端 232 passed，E2E 7 passed / 1 skipped
+（千节点性能用例按现有高负载守卫跳过，未降低门槛），lint 0 errors / 13 既有 warnings，build 通过。
+最终包括 Unicode 路径、用户隔离、出站证据不可变、跨进程认领与独立门禁失败复盘修正。
+外部提取费用不包含在战场 Codex 金额硬闸。
+
 ## 2026-10-19 左栏交互精简
 
 实现：`web/src/LeftRail.tsx`、`RailDisclosure.tsx`、`RailAttention.tsx`。

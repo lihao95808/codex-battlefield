@@ -40,6 +40,7 @@ from . import (
     trace,
 )
 from . import steward_alerts as steward_alerts_mod
+from . import parent_learning
 from .config import ROOT_DIR, machine_path_of
 from .database import SessionLocal, get_db, init_db
 from .events import event_bus
@@ -97,9 +98,13 @@ async def lifespan(_app: FastAPI):
         await asyncio.to_thread(orchestrator.refresh_external_codex_process_cache)
         scan_task = asyncio.create_task(_external_process_scan_loop())
     proactive_task = asyncio.create_task(_steward_proactive_loop())
+    learning_task = asyncio.create_task(_learning_outbox_loop())
     try:
         yield
     finally:
+        learning_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await learning_task
         proactive_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await proactive_task
@@ -107,6 +112,28 @@ async def lifespan(_app: FastAPI):
             scan_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await scan_task
+
+
+async def _learning_outbox_loop() -> None:
+    """Opt-in provider extraction is advisory; errors stay in the evidence outbox."""
+    while True:
+        try:
+            await parent_learning.flush_pending(SessionLocal)
+        except Exception:
+            # Stored evidence remains retryable; never alter product task status.
+            pass
+        await asyncio.sleep(30)
+
+
+def learning_records(task_id: str = "", limit: int = Query(50, ge=1, le=500),
+                     db: Session = Depends(get_db)) -> dict:
+    try:
+        config = parent_learning.settings_from_env()
+        enabled = bool(config.url and config.user_id)
+    except ValueError:
+        enabled = False
+    return {"records": parent_learning.query_records(db, task_id, limit),
+            "provider": {"backend": "openviking", "enabled": enabled, "configured": enabled}}
 
 
 #: 外部 Codex 进程扫描的**后台刷新间隔**（秒）。
@@ -210,6 +237,7 @@ async def _steward_proactive_loop() -> None:
 
 
 app = FastAPI(title="Codex 任务战场 API", version="0.1.0", lifespan=lifespan)
+app.add_api_route("/api/learning/records", learning_records, methods=["GET"])
 
 # 加载慢端点基线（P5-1）：文件在 `bench/endpoint_baseline.json`。
 # 加载失败只是"不做退化判断"，不该让 API 起不来 —— 判据里另有一条查它真的被加载了。

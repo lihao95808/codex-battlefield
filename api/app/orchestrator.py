@@ -38,6 +38,7 @@ from . import constitution_versions
 from . import constraints
 from . import convergence
 from . import failure_retrospective
+from . import parent_learning
 from . import godot_files
 from . import godot_gates
 from . import integration
@@ -3668,6 +3669,8 @@ class Orchestrator:
             self._seed_planner_worktree_context(db, task)
             db.commit()
 
+        # Before the first planner call, not after decomposition: relevant experience must inform the split.
+        await self._recall_parent_experience(task_id)
         try:
             async with semaphore:
                 if not await self._reserve_agent_start(task_id, "planner"):
@@ -3696,6 +3699,10 @@ class Orchestrator:
                 return
             self._record_run(db, task, RunKind.PLANNER, planner_envelope, "read-only")
             self._add_event(db, task.id, "planner.decision", decision.reason, decision.model_dump())
+            planning_meta = loads(task.node_meta_json, {})
+            planning_meta["reuse_plan"] = {"integration_plan": decision.integration_plan,
+                                           "verification_plan": decision.verification_plan}
+            task.node_meta_json = dumps(planning_meta)
             db.commit()
 
             if self._is_false_missing_objective(decision, task):
@@ -4879,13 +4886,21 @@ class Orchestrator:
                 self._mark(db, task, TaskStatus.WAITING_CHILDREN, "仍有子节点未完成，父节点等待中。")
                 db.commit()
                 return
-            self._integrate_child_outputs(db, task, integration_children)
+            integration_report = self._integrate_child_outputs(db, task, integration_children)
+            self._record_learning_review(
+                db, task, "integration", new_id("integration"),
+                {"children": [{"id": child.id, "status": child.status} for child in integration_children],
+                 "integration": integration_report.to_meta() if integration_report else None,
+                 "observation": "unknown", "evidence_missing": integration_report is None},
+            )
             # R6：父层主导写入失败复盘（与 skill note 开关解耦；复盘产物里也会带上它）
             self._write_failure_retrospective(db, task)
             self._consolidate_parent_skill_notes(db, task)
             child_payloads = [self.serialize_task(child, False) for child in integration_children]
             pre_acceptance_gate_child_ids = self._pre_acceptance_gate_children(db, task, child_payloads)
             if pre_acceptance_gate_child_ids:
+                self._record_learning_review(db, task, "pre_acceptance_gate", new_id("gate"),
+                    {"observation": "failed", "gate": "pre_acceptance", "repair_children": pre_acceptance_gate_child_ids})
                 db.commit()
             else:
                 self._mark(db, task, TaskStatus.QUEUED, "父节点整合验收已排队，正在等待 Codex CLI 执行槽位。")
@@ -4923,6 +4938,9 @@ class Orchestrator:
             with SessionLocal() as db:
                 task = self._get_task(db, task_id)
                 self._block_task(db, task, f"父节点整合验收失败：{exc}", "acceptance.exception")
+                self._record_learning_review(db, task, "acceptance_exception", new_id("acceptance_exception"),
+                                             {"observation": "unknown", "source": "acceptance.exception",
+                                              "error_type": type(exc).__name__, "task_status": task.status})
                 db.commit()
             return
 
@@ -4934,6 +4952,16 @@ class Orchestrator:
                 return
             self._record_run(db, task, RunKind.ACCEPTANCE, acceptance_envelope, "workspace-write")
             db.flush()
+            self._record_learning_review(
+                db, task, "acceptance", new_id("acceptance"),
+                {"run_id": db.scalar(select(RunRecord.id).where(RunRecord.task_id == task.id,
+                    RunRecord.kind == RunKind.ACCEPTANCE.value).order_by(RunRecord.id.desc()).limit(1)),
+                 "agent_report": acceptance_result.model_dump(exclude={"retrospective"}),
+                 "children": [child["id"] for child in child_payloads],
+                 "integration": loads(task.node_meta_json, {}).get("parent_integration"),
+                 "observation": "unknown", "qualification": "agent_verdict_before_independent_gates"},
+                acceptance_result.retrospective,
+            )
             if acceptance_result.verdict == "pass":
                 integration_gate = self._parent_godot_integration_gate(db, task)
                 final_gate = self._final_root_product_gate(db, task)
@@ -4946,6 +4974,8 @@ class Orchestrator:
                     }
                 )
                 if integration_gate["required"] and not integration_gate["passed"]:
+                    self._record_learning_review(db, task, "product_gate", new_id("gate"),
+                        {"observation": "failed", "gate": "integration", "report": integration_gate})
                     acceptance_result = AcceptanceResult(
                         verdict="repair",
                         reason="父节点 Godot 集成门禁未通过，必须继续递归修复断链或入口问题。",
@@ -4960,6 +4990,8 @@ class Orchestrator:
                         integration_gate,
                     )
                 elif final_gate["required"] and not final_gate["passed"]:
+                    self._record_learning_review(db, task, "product_gate", new_id("gate"),
+                        {"observation": "failed", "gate": "final_product", "report": final_gate})
                     final_gate_repair_gate = final_gate
                     acceptance_result = AcceptanceResult(
                         verdict="repair",
@@ -4983,11 +5015,21 @@ class Orchestrator:
                     self._record_requirement_obligations(db, task)
                     self._record_regression_obligations(db, task)
                     if self._obligation_gate(db, task):
+                        self._record_learning_review(db, task, "product_gate", new_id("gate"),
+                            {"observation": "failed", "gate": "obligation", "task_status": task.status,
+                             "qualification": "unsettled_obligations_after_agent_pass"})
+                        db.commit()
                         return
                     self._stamp_constitution_version_on_completion(db, task)
                     # 门禁通过且版本戳已更新之后才重记基线——被拦下的那一轮不算"通过"。
                     self._refresh_regression_baseline(db, task)
                     self._mark(db, task, TaskStatus.DONE, acceptance_result.reason)
+                    self._record_learning_review(
+                        db, task, "completion", new_id("completion"),
+                        {"observation": "passed", "task_status": task.status,
+                         "integration_gate": integration_gate, "final_gate": final_gate,
+                         "qualification": "product_gates_passed_not_causal_proof_of_experience"},
+                    )
                     self._enqueue_revalidate_after_run(db, task)
                     db.commit()
                     return
@@ -8236,6 +8278,11 @@ class Orchestrator:
                 # §7.1.3：父节点自身的 must/never 与它继承来的链，一起下沉（逐层累积）
                 "inherited_constraints": self._inherited_constraints_for_parent(parent),
             }
+            # Hand down the exact retrieval snapshot, not a mutable link or a promoted rule.
+            parent_learning_meta = loads(parent.node_meta_json, {})
+            for learning_key in ("experience_context", "reuse_plan"):
+                if learning_key in parent_learning_meta:
+                    node_meta[learning_key] = parent_learning_meta[learning_key]
             if dropped_repair_dependency_ids:
                 node_meta["dropped_blocked_repair_dependency_ids"] = dropped_repair_dependency_ids
             if parent_is_final_gate:
@@ -10797,6 +10844,27 @@ class Orchestrator:
         except RuntimeError:
             return
         loop.create_task(event_bus.publish(json.dumps(self.serialize_event(event), default=str)))
+
+    async def _recall_parent_experience(self, task_id: str) -> None:
+        """Memory failures are visible advisory events, never a product acceptance gate."""
+        try:
+            await parent_learning.recall_for_task(SessionLocal, task_id)
+        except Exception:
+            with SessionLocal() as db:
+                task = self._get_task(db, task_id)
+                meta = loads(task.node_meta_json, {})
+                meta["experience_context"] = {"status": "error", "entries": [], "error": "recall_unavailable"}
+                task.node_meta_json = dumps(meta)
+                self._add_event(db, task_id, "learning.recall_unavailable", "经验检索失败；不能把它理解成没有相关经验。", {})
+                db.commit()
+
+    def _record_learning_review(self, db: Session, parent: TaskNode, phase: str,
+                                attempt_key: str, facts: dict, analysis: dict | None = None) -> None:
+        try:
+            with db.begin_nested():
+                parent_learning.record_review(db, parent, phase, attempt_key, facts, analysis)
+        except Exception:
+            self._add_event(db, parent.id, "learning.review_pending", "复盘存储失败，交付验收结果不因此改变。", {"phase": phase})
 
     def _snapshot_task(self, task_id: str) -> TaskNode:
         with SessionLocal() as db:

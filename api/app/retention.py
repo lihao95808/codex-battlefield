@@ -59,6 +59,7 @@ NEVER_TRUNCATE_TABLES: tuple[str, ...] = (
     "goal_deliveries",
     "incident_conclusions",
     "attention_claims",
+    "learning_records",
 )
 
 # 大件目录（相对工程状态目录）。`worktrees` **刻意不在**这里（见模块文档）。

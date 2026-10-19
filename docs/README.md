@@ -18,6 +18,7 @@
 | [`observability.md`](observability.md) | 端点耗时与关联 ID：实测基线、为什么分位数是滑动窗口、失败请求为什么也要计量 |
 | [`data-retention.md`](data-retention.md) | 数据保留：三种东西三种待遇、为什么必须先列"不能删什么"、锚点为什么永不清理 |
 | [`crash-injection.md`](crash-injection.md) | 崩溃注入：还原锚点为什么必须原子写、`.backup` 怎么救回第一次写、源级判据要断完整调用 |
+| [`parent-learning.md`](parent-learning.md) | 父节点规划前经验检索、整合复盘、OpenViking 适配与复用优先，真实库测试边界 |
 | [`frontend-split.md`](frontend-split.md) | 前端拆分与按需轮询：为什么不停在"看不见也拉"、文件体量棘轮怎么用、批量改写的三个坑 |
 | [`e2e-browser.md`](e2e-browser.md) | 真浏览器 E2E：为什么不用 `page.route` 回放、`channel: 'chromium'` 那个坑、诊断导出怎么判 |
 | [`weak-model-usability.md`](weak-model-usability.md) | 弱模型可用性实测：两档便宜模型能当 planner、失败模式是"结构漂移"、没验成的档怎么如实标记 |

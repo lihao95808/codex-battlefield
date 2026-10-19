@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -368,5 +368,28 @@ class IncidentConclusion(Base):
     # 渲染好的完整文档（便于直接展示/导出，避免每次重算）
     markdown: Mapped[str] = mapped_column(Text, default="")
     author: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LearningRecord(Base):
+    """Evidence snapshots / publication outbox, NOT a local experience engine.
+
+    No task foreign key: deleting a task must not erase its review evidence.
+    Accepted publication is pending extraction, never proof of learning.
+    """
+
+    __tablename__ = "learning_records"
+    __table_args__ = (UniqueConstraint("task_id", "kind", "attempt_key", name="uq_learning_attempt"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(40), index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    phase: Mapped[str] = mapped_column(String(40))
+    attempt_key: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    provider_task_id: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

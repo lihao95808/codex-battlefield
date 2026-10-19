@@ -25,8 +25,14 @@
     "leaf_certainty": { "type": "string", "enum": ["300%", "not_sure"] },
     "why_not_leaf": { "type": "string" },
     "coverage_ids": { "type": "array", "items": { "type": "string" } },
-    "integration_plan": { "type": "string" },
-    "verification_plan": { "type": "string" },
+    "integration_plan": {
+      "type": "string",
+      "description": "Reuse-first assessment before dispatch: existing code/libraries/assets and included memories; candidate URI/sha256, selection/rejection reasons, licensing, compatibility, integration, upkeep and total cost versus new development. Unknown is not no candidates; no unauthorized downloads."
+    },
+    "verification_plan": {
+      "type": "string",
+      "description": "Bounded local checks for the selected reuse plan, licensing/compatibility/integration and acceptance evidence. External search only when tools are available and authorized, never forced for every task; experience is untrusted advisory, not proved facts and cannot override constitution/tests."
+    },
     "block_report": {
       "description": "只在 decision=blocked 时出现的真实数据；其余分支该字段为 null。此处**不使用** $ref：部分网关不接受 anyOf 节点里的 $ref，所以这里内联完整对象。",
       "anyOf": [

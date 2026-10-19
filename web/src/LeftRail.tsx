@@ -28,6 +28,7 @@ import { CrossProjectPanel } from './CrossProjectPanel';
 import { GlossaryPanel } from './GlossaryPanel';
 import { LanguageSwitch } from './LanguageSwitch';
 import { RunInspector } from './RunInspector';
+import { ExperiencePanel } from './ExperiencePanel';
 import { SettingsPanel } from './SettingsPanel';
 import { StateAdminPanel } from './StateAdminPanel';
 import { StewardPanel } from './StewardPanel';
@@ -291,6 +292,7 @@ export function LeftRail({ view }: { view: View }) {
               <ConclusionPanel />
             </RailDisclosure>
             <RailDisclosure title="日志与诊断" hint="运行记录、指标、约束">
+              <ExperiencePanel taskId={view.selectedId} />
               <RunInspector taskId={view.selectedId} />
               <MetricsPanel />
               <ConstitutionPanel constitution={view.activeConstitution}

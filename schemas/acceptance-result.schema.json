@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["verdict", "reason", "checks", "evidence", "constitution_verdict", "suggested_children"],
+  "required": ["verdict", "reason", "checks", "evidence", "constitution_verdict", "suggested_children", "retrospective"],
   "additionalProperties": false,
   "properties": {
     "verdict": { "type": "string", "enum": ["pass", "repair", "blocked", "visual_uncertain"] },
@@ -15,6 +15,58 @@
     "suggested_children": {
       "type": "array",
       "items": { "$ref": "#/$defs/childTask" }
+    },
+    "retrospective": {
+      "description": "Bounded advisory hypotheses grounded in existing checks/evidence, not proved facts or user conclusions; no forced lesson or default child blame. Null is permitted when unsupported.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_hypothesis", "alternative_causes", "lesson", "experience_feedback"],
+          "properties": {
+            "cause_hypothesis": { "type": "string" },
+            "alternative_causes": { "type": "array", "items": { "type": "string" } },
+            "lesson": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "advice", "applicability"],
+                  "properties": {
+                    "title": { "type": "string" },
+                    "advice": { "type": "string" },
+                    "applicability": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["engine", "task_type", "tags"],
+                      "properties": {
+                        "engine": { "type": "string" },
+                        "task_type": { "type": "string" },
+                        "tags": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                  }
+                },
+                { "type": "null" }
+              ]
+            },
+            "experience_feedback": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["uri", "implemented", "observation"],
+                "properties": {
+                  "uri": { "type": "string" },
+                  "implemented": { "type": ["boolean", "null"] },
+                  "observation": { "type": "string", "enum": ["helpful", "unhelpful", "unknown"] }
+                }
+              }
+            }
+          }
+        },
+        { "type": "null" }
+      ]
     }
   },
   "$defs": {

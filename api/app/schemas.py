@@ -75,6 +75,14 @@ class VerifierResult(BaseModel):
 
 
 class AcceptanceResult(BaseModel):
+    """Parent evidence review; retrospective contains advisory hypotheses, not facts.
+
+    The CLI JSON schema strictly constrains the nullable reflection object. This
+    dictionary remains optional for legacy/mock construction; model_dump includes
+    retrospective=None, so strict output envelopes still contain the required key.
+    """
+
+    retrospective: dict[str, Any] | None = None
     verdict: Literal["pass", "repair", "blocked", "visual_uncertain"]
     reason: str
     checks: list[str] = Field(default_factory=list)
