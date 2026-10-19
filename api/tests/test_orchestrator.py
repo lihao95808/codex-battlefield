@@ -11398,6 +11398,7 @@ def test_run_artifact_preview_is_limited_to_workspace(tmp_path: Path):
             exit_code=0,
             result_json=dumps({"ok": True}),
             prompt_path=str(artifact_path),
+            logs_path=str(artifact_path),
             last_message_path=str(outside_path),
         )
         db.add(run)
@@ -11405,11 +11406,16 @@ def test_run_artifact_preview_is_limited_to_workspace(tmp_path: Path):
         run_id = run.id
 
         prompt = orchestrator.get_run_artifact(db, run_id, "prompt")
+        logs = orchestrator.get_run_artifact(db, run_id, "logs")
         outside = orchestrator.get_run_artifact(db, run_id, "last_message")
 
     assert prompt["exists"] is True
     assert prompt["content"] == "abcde"
     assert prompt["truncated"] is True
+    # 实时日志要最新尾部（面板用），旧断言只能证明"截了前 5 个字"。
+    assert logs["exists"] is True
+    assert logs["content"] == "cdefg"
+    assert logs["truncated"] is True
     assert outside["exists"] is False
     assert outside["content"]
 

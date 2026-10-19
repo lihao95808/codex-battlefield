@@ -4,6 +4,8 @@
  * 它按需拉产物（`fetchRunArtifact`），也负责展示阻塞/等待报告。
  */
 import { fetchRunArtifact } from './api';
+import { NodeActivity } from './NodeActivity';
+import { NodeCompletion } from './NodeCompletion';
 import { formatCostSummary, formatDateTime, formatUsageSummary } from './format';
 import { blockParentActionLabel, blockRetryableLabel, eventTypeLabel, runKindLabel, runStatusLabel, statusLabel } from './labels';
 import {
@@ -83,6 +85,7 @@ export function DetailPanel({
   }
 
   const { task } = detail;
+  if (task.status === 'done') return <NodeCompletion detail={detail} busy={busy} onAction={onAction} />;
   const blockReport = asRecord(task.node_meta.block_report);
   const childBlockReports = asRecordArray(task.node_meta.blocked_child_reports);
   const waitingReport = asRecord(task.node_meta.waiting_report) ?? fallbackWaitingReport;
@@ -97,6 +100,8 @@ export function DetailPanel({
       </div>
       <h2>{task.title}</h2>
       <p className="muted">{task.description}</p>
+      <dl className="node-basic-info"><dt>节点 ID</dt><dd>{task.id}</dd><dt>任务深度</dt><dd>{task.depth}</dd><dt>父节点</dt><dd>{task.parent_id ?? '根节点'}</dd><dt>工作目录</dt><dd>{task.worktree_path ?? '尚未创建'}</dd></dl>
+      <NodeActivity key={task.id} detail={detail} />
 
       <div className="actions">
         <button onClick={() => onAction('retry')} disabled={busy} title="重试此任务">

@@ -205,7 +205,7 @@ export function GlobalNavigationDock({
           <span className="dock-blocked-count">阻塞 {blocked.count}</span>
           {blocked.top && (
             <span className="dock-blocked-reason">
-              {blocked.top.length > 46 ? `${blocked.top.slice(0, 46)}…` : blocked.top}
+              {blocked.top}
             </span>
           )}
         </div>

@@ -168,14 +168,20 @@ export function useBattlefieldDerived({
 
   const visibleTasks = useMemo(() => {
     if (!tree) return [];
+    const selectedPath = new Set<string>();
+    let selected = selectedId ? taskById.get(selectedId) : undefined;
+    while (selected && !selectedPath.has(selected.id)) {
+      selectedPath.add(selected.id); selected = selected.parent_id ? taskById.get(selected.parent_id) : undefined;
+    }
     return tree.tasks.filter((task) => {
+      if (selectedPath.has(task.id)) return true;
       if (doneArchive.hiddenIds.has(task.id)) return false;
       if (isHiddenByCollapse(task)) return false;
       if (statusFilter === 'all') return true;
       if (statusFilter === 'active') return task.is_active_frontier;
       return task.status === statusFilter;
     });
-  }, [doneArchive.hiddenIds, isHiddenByCollapse, statusFilter, tree]);
+  }, [doneArchive.hiddenIds, isHiddenByCollapse, statusFilter, tree, selectedId, taskById]);
 
   const toggleNodeCollapse = useCallback((task: BattlefieldTask) => {
     if (collapsedNodeIds.has(task.id)) {
@@ -311,6 +317,7 @@ export function useBattlefieldDerived({
     const nextNodes: Node[] = renderedTasks.map((task) => ({
       id: task.id,
       type: 'task',
+      selected: task.id === selectedId,
       data: {
         task,
         selected: task.id === selectedId,

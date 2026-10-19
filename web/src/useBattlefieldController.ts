@@ -125,11 +125,11 @@ export function useBattlefieldController() {
       setDetail(null);
       return;
     }
+    let alive = true;
     fetchTask(selectedId)
-      .then(setDetail)
-      .catch(() => {
-        setDetail(null);
-      });
+      .then((value) => { if (alive) setDetail(value); })
+      .catch(() => { if (alive) setDetail(null); });
+    return () => { alive = false; };
   }, [selectedId, tree]);
 
 
@@ -426,7 +426,7 @@ export function useBattlefieldController() {
   };
 
 
-  return {
+  return { collapsedNodeIds,
     ...derived,
     activeConstitution,
     activeRootId,

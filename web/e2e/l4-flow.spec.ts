@@ -26,6 +26,7 @@ import { expect, test } from '@playwright/test';
 /** 走完"写目标 → 生成草案 → 锁定宪法"，返回之后就可以起树了。 */
 async function prepareConstitution(page: import('@playwright/test').Page, goal: string) {
   await page.goto('/');
+  await page.locator('summary').filter({ hasText: '新建任务' }).click();
   const goalBox = page.locator('#goal');
   await expect(goalBox).toBeVisible();
   await goalBox.fill(goal);
@@ -49,6 +50,27 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
     page.on('request', (request) => requests.push(new URL(request.url()).pathname));
     await page.goto('/');
     const rail = page.locator('.left-rail');
+    await expect(page.getByLabel('当前任务层级树')).toBeVisible();
+    await expect(page.getByLabel('选中节点详情')).toBeVisible();
+    await expect(page.getByLabel('底部聊天面板')).toBeVisible();
+    await expect(page).toHaveTitle('任务战场');
+    await expect(rail.locator('.brand h1')).toHaveText('任务战场');
+    const conversation = page.getByLabel('底部聊天面板');
+    await expect(conversation.locator('.navigation-dock')).toBeVisible();
+    await expect(page.locator('.battlefield .navigation-dock')).toHaveCount(0);
+    await expect(conversation.locator('.navigation-dock button')).toHaveCount(6);
+    await expect(conversation.getByLabel('状态图例')).toBeVisible();
+    const hierarchy = page.getByLabel('当前任务层级树');
+    const taskRows = hierarchy.locator('.rc-tree-node-content-wrapper');
+    if (await taskRows.count() > 0) {
+      await taskRows.first().click();
+      await expect(hierarchy.locator('.rc-tree-node-selected')).toHaveCount(1);
+      await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+      await expect(page.locator('.node-basic-info')).toBeVisible();
+      await expect(page.getByLabel('美术产出预览')).toBeVisible();
+    }
+    await expect(rail.locator('#goal')).toHaveCount(0);
+    await rail.locator('summary').filter({ hasText: '新建任务' }).click();
     await expect(rail.locator('#goal')).toBeVisible();
     await expect(rail.getByRole('button', { name: '生成草案' })).toBeVisible();
     await expect(rail.locator('.rail-tools > details')).toHaveCount(4);
@@ -154,10 +176,10 @@ test.describe('L4 导航：绑定 → 起树 → 进度 → 预授权 → 诊断
 
     // 模拟树只有几个节点（远小于窗口上限），所以**不该**出现"被挡住"的提示 ——
     // 出现就说明判据把"没挡"也报成了"挡了"（那会让提示变成噪声，用户学会忽略它）。
-    await expect(page.getByTestId('virtualization-notice')).toHaveCount(0);
     await expect(page.getByLabel('L4 自动导航画布').locator('.react-flow__node').first()).toBeVisible({
       timeout: 60_000,
     });
+    await expect(page.getByTestId('virtualization-notice')).toHaveCount(0);
   });
 
   test('导出诊断：拿到诊断包，且里面包含真实证据而不是空壳', async ({ page, request }) => {

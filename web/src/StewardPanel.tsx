@@ -36,7 +36,7 @@ import {
 } from '@assistant-ui/react';
 import type { ChatModelAdapter, ThreadMessage } from '@assistant-ui/react';
 import { ActionInbox } from './StewardActionInbox';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   approveStewardAction,
@@ -185,9 +185,11 @@ function AlertStrip({ alerts, reason }: { alerts: StewardAlert[]; reason: string
 export function StewardPanel({
   layout,
   onOpen,
+  navigation,
 }: {
   layout: StateLayoutResponse | null;
   onOpen?: () => void;
+  navigation?: ReactNode;
 }) {
   const [historyVersion, setHistoryVersion] = useState(0);
   const { seed, readOnly } = useHistorySeed(historyVersion);
@@ -345,6 +347,7 @@ export function StewardPanel({
 
   return (
     <section className="steward-panel" aria-label="管家">
+      {navigation && <div className="steward-navigation" aria-label="对话运行状态与控制">{navigation}</div>}
       <div className="steward-head">
         <h3>管家</h3>
         <span className="steward-head-badges">
@@ -372,6 +375,8 @@ export function StewardPanel({
         )}
       </p>
 
+      <details className="steward-operational-details">
+        <summary>提醒与待审批动作</summary>
       <AlertStrip alerts={alerts} reason={alertReason} />
 
       {inboxError && <p className="steward-inbox-error">{inboxError}</p>}
@@ -382,6 +387,7 @@ export function StewardPanel({
         busyId={busyId}
         onDecide={onDecide}
       />
+      </details>
 
       {seed === null ? (
         <p className="steward-loading">正在读取对话…</p>

@@ -406,6 +406,19 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "frozen_mode": str(orchestrator.settings.frozen_mode).lower()}
 
 
+@app.get("/api/project/files")
+def project_files(path: str = "") -> dict:
+    from .project_explorer import list_directory
+    try:
+        return list_directory(orchestrator.settings.project_root, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid project directory") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="project directory not found") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=403, detail="project directory unavailable") from exc
+
+
 @app.get("/api/state")
 def state_layout() -> dict:
     """当前状态布局自描述——回答"我现在在哪个工程、用哪个库、状态根在哪"（目标 G6）。

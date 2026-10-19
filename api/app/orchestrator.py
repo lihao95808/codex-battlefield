@@ -7747,13 +7747,24 @@ class Orchestrator:
             return response
         if not path.exists() or not path.is_file():
             return response
-        content = repair_mojibake_text(path.read_text(encoding="utf-8", errors="replace"))
         limit = max(0, self.settings.artifact_preview_chars)
-        if limit and len(content) > limit:
-            response["content"] = content[:limit]
-            response["truncated"] = True
+        if kind == "logs" and limit:
+            # Live inspection needs the newest events, not a frozen prefix. Bound I/O
+            # as well as response size; never fabricate missing reasoning/events.
+            with path.open("rb") as handle:
+                size = handle.seek(0, 2)
+                start = max(0, size - limit * 4)
+                handle.seek(start)
+                raw = handle.read()
+            if start and b"\n" in raw:
+                raw = raw.split(b"\n", 1)[1]
+            content = repair_mojibake_text(raw.decode("utf-8", errors="replace"))
+            response["truncated"] = start > 0 or len(content) > limit
+            response["content"] = content[-limit:]
         else:
-            response["content"] = content
+            content = repair_mojibake_text(path.read_text(encoding="utf-8", errors="replace"))
+            response["truncated"] = bool(limit and len(content) > limit)
+            response["content"] = content[:limit] if limit else content
         response["exists"] = True
         return response
 

@@ -31,7 +31,7 @@ import { RunInspector } from './RunInspector';
 import { ExperiencePanel } from './ExperiencePanel';
 import { SettingsPanel } from './SettingsPanel';
 import { StateAdminPanel } from './StateAdminPanel';
-import { StewardPanel } from './StewardPanel';
+import { TaskHierarchy } from './TaskHierarchy';
 import { constitutionBoardFromStats, obligationBoardFromStats } from './model';
 import type { TaskStatus } from './types';
 
@@ -44,12 +44,16 @@ export function LeftRail({ view }: { view: View }) {
               <Zap size={22} />
             </div>
             <div>
-              <h1>L4 Navigator</h1>
+              <h1>任务战场</h1>
               <p>AI L4 自动导航任务可视化</p>
             </div>
             <LanguageSwitch />
           </div>
   
+          <TaskHierarchy tasks={view.treeIsStale ? [] : view.tree?.tasks ?? []} selectedId={view.selectedId}
+            collapsedIds={view.collapsedNodeIds} depthLimit={view.visibleDepthLimit} onSelect={view.setSelectedId}
+            onToggle={view.toggleNodeCollapse} onExpandAll={view.expandAll} onCollapse={view.collapseOneLayer} />
+          <RailDisclosure title="新建任务" hint="目标与边界">
           <section className="panel">
             <label htmlFor="goal">导航目标</label>
             <textarea id="goal" value={view.goal} onChange={(event) => view.setGoal(event.target.value)} />
@@ -133,6 +137,7 @@ export function LeftRail({ view }: { view: View }) {
             ) : null}
           </section>
   
+          </RailDisclosure>
           <RailDisclosure title="画布显示" hint="筛选与层级">
           <section className="panel">
             <label htmlFor="filter">视图</label>
@@ -275,7 +280,6 @@ export function LeftRail({ view }: { view: View }) {
               <GlossaryPanel />
             </RailDisclosure>
             <RailDisclosure title="管家与授权" hint="对话、审批、看门狗">
-              <StewardPanel layout={view.layoutState} onOpen={() => view.loadTree().catch(() => undefined)} />
               <PreAuthPanel />
               <CoordinationPanel />
               <WatchdogPanel

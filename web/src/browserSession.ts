@@ -22,7 +22,7 @@ export function openPendingPreviewWindow(): Window | null {
   try {
     const previewWindow = window.open('', '_blank');
     if (!previewWindow) return null;
-    previewWindow.document.title = 'L4 Navigator';
+    previewWindow.document.title = '任务战场';
     previewWindow.document.body.innerHTML = `
       <main style="min-height:100vh;display:grid;place-items:center;margin:0;background:#f4f8fb;color:#102033;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
         <section style="text-align:center;">

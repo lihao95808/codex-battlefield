@@ -13,10 +13,12 @@ import { DetailPanel } from './DetailPanel';
 import { Background, Controls, MiniMap, ReactFlow } from '@xyflow/react';
 import { ShieldCheck } from 'lucide-react';
 import { statNumber } from './format';
+import { StewardPanel } from './StewardPanel';
 
 export function WorkspaceView({ view }: { view: View }) {
   return (
     <>
+        <div className="center-workspace">
         <section className="battlefield" aria-label="L4 自动导航画布">
           {view.treeIsStale ? (
             <div className="tree-empty-state">
@@ -34,6 +36,11 @@ export function WorkspaceView({ view }: { view: View }) {
               edges={view.edges}
               nodeTypes={nodeTypes}
               fitView
+              fitViewOptions={{
+                nodes: [...view.nodes].sort((a, b) => a.position.y - b.position.y).slice(0, 6).map(({ id }) => ({ id })),
+                padding: 0.15,
+                maxZoom: 0.85,
+              }}
               minZoom={0.15}
               maxZoom={1.5}
               elevateEdgesOnSelect
@@ -52,7 +59,12 @@ export function WorkspaceView({ view }: { view: View }) {
               <Controls />
             </ReactFlow>
           )}
-          <GlobalNavigationDock
+        </section>
+        <section className="chat-dock" aria-label="底部聊天面板">
+          <StewardPanel
+            layout={view.layoutState}
+            onOpen={() => view.loadTree().catch(() => undefined)}
+            navigation={<GlobalNavigationDock
             stats={view.visibleStats}
             usage={view.treeIsStale ? null : (view.tree?.usage ?? null)}
             blocked={view.blockedSummary}
@@ -73,10 +85,13 @@ export function WorkspaceView({ view }: { view: View }) {
             onCollapseOneLayer={view.collapseOneLayer}
             onExpandOneLayer={view.expandOneLayer}
             onExpandAll={view.expandAll}
+            />}
           />
         </section>
-  
-        <aside className="right-rail">
+        </div>
+        <aside className="right-rail node-inspector" aria-label="选中节点详情">
+          <header className="node-inspector-head"><h2>节点详情</h2></header>
+          <div className="node-inspector-scroll">
           <DetailPanel
             detail={view.treeIsStale ? null : view.detail}
             waitingReport={view.detail?.task.id ? (view.waitingReports.get(view.detail.task.id) ?? null) : null}
@@ -85,6 +100,7 @@ export function WorkspaceView({ view }: { view: View }) {
             busyLabel={view.busyLabel}
             onAction={view.onAction}
           />
+          </div>
         </aside>
     </>
   );

@@ -5405,3 +5405,110 @@ select:focus {
 .rail-disclosure > summary:focus-visible { outline: 2px solid #1d556f; outline-offset: 2px; }
 .rail-disclosure-body { display: grid; gap: 10px; padding: 0 10px 10px; }
 .rail-disclosure-body > :last-child { margin-bottom: 0; }
+
+.node-inspector-drawer { position: fixed; right: 12px; top: 12px; z-index: 30; }
+.node-inspector-drawer > summary { cursor: pointer; background: #fff; border: 1px solid #d2d9df; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+.node-inspector-drawer[open] { width: min(380px, 80vw); max-height: 85vh; overflow: auto; background: #fff; box-shadow: 0 8px 30px #18202a22; }
+.node-inspector-drawer[open] .right-rail { display: block; }
+/* IDE layout: files left, workspace above, full-width conversation below. */
+.shell { grid-template-columns: 260px minmax(0, 1fr); }
+.right-rail { display: none; }
+.left-rail .brand { flex-wrap: wrap; }
+.left-rail .brand h1 { white-space: nowrap; font-size: 14px; }
+.rail-warning { max-height: 56px; overflow: auto; }
+.chat-dock .steward-operational-details { flex-shrink: 0; font-size: 12px; margin-bottom: 6px; }
+.chat-dock .steward-operational-details[open] { max-height: 120px; overflow: auto; }
+.chat-dock .steward-empty { padding: 8px; }
+.chat-dock .steward-viewport { border: 0; background: #fff; }
+.left-rail { display: flex; flex-direction: column; padding: 16px 12px; }
+.center-workspace { display: grid; grid-template-rows: minmax(220px, 1fr) minmax(340px, 42vh); min-width: 0; min-height: 0; }
+.center-workspace .battlefield { min-height: 0; }
+.project-explorer { flex: 1; min-height: 180px; overflow: auto; margin-bottom: 16px; }
+.explorer-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.explorer-heading h2 { font-size: 13px; }
+.explorer-heading button { padding: 5px; background: transparent; color: #687684; }
+.explorer-list { list-style: none; padding: 0; margin: 0; }
+.explorer-list .explorer-list { margin-left: 14px; border-left: 1px solid #e1e7ec; padding-left: 4px; }
+.explorer-file { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 6px 4px; background: transparent; color: #41505d; text-align: left; font-size: 12px; border-radius: 4px; }
+.explorer-file:hover { background: #eaf0f5; }
+.explorer-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explorer-file svg { flex-shrink: 0; }
+.explorer-hint, .explorer-selection { font-size: 12px; color: #687684; padding: 8px 0; overflow-wrap: anywhere; }
+.left-rail > .stat-grid, .left-rail > .stat-more { display: none; }
+.chat-dock { min-height: 0; overflow: auto; border-top: 1px solid #d2d9df; background: #fff; padding: 12px 20px; }
+.chat-dock .steward-panel { display: flex; flex-direction: column; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; }
+.chat-dock .steward-thread { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.chat-dock .steward-viewport { flex: 1; min-height: 50px; max-height: none; overflow: auto; }
+.chat-dock .steward-composer { display: flex; align-items: flex-end; gap: 12px; flex-shrink: 0; }
+.chat-dock .steward-input { flex: 1; min-height: 58px; max-height: 120px; }
+.chat-dock .steward-composer-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.chat-dock .steward-scope, .chat-dock .steward-refresh, .chat-dock .steward-diagnostics { display: none; }
+.chat-dock .steward-head { margin-bottom: 6px; }
+/* Controls belong to the conversation, not an overlay obscuring the task tree. */
+.chat-dock .steward-navigation { flex-shrink: 0; margin-bottom: 8px; }
+.chat-dock .navigation-dock {
+  position: static; transform: none; width: 100%; min-height: 0;
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 10px;
+  box-sizing: border-box; box-shadow: none; backdrop-filter: none;
+  border-radius: 10px; background: #f5f8fb;
+}
+.chat-dock .navigation-state { flex: 1 1 340px; min-width: 0; }
+.chat-dock .navigation-state span:last-child { white-space: normal; line-height: 1.5; overflow: visible; }
+.chat-dock .dock-model, .chat-dock .dock-usage { flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; }
+.chat-dock .dock-blocked { flex: 1 1 100%; max-width: none; align-items: flex-start; }
+.chat-dock .dock-blocked-reason { white-space: normal; overflow-wrap: anywhere; }
+.chat-dock .dock-legend { display: flex; }
+.chat-dock .dock-divider { display: none; }
+.chat-dock .dock-actions, .chat-dock .dock-view-actions, .chat-dock .dock-busy { width: auto; }
+@media (max-width: 760px) {
+  .chat-dock .navigation-state { flex-basis: 100%; }
+  .chat-dock .dock-actions { flex-wrap: wrap; }
+}
+.chat-dock .steward-msg { max-width: 90%; }
+.right-rail { padding: 14px; }
+.right-rail .recursive-judgment { display: none; }
+@media (max-width: 1300px) { .shell { grid-template-columns: 240px minmax(0, 1fr); } .right-rail { display: none; } }
+@media (max-width: 760px) { .shell { grid-template-columns: 190px minmax(0, 1fr); grid-template-rows: 1fr; } .left-rail { max-height: none; } .chat-dock { padding: 10px; } .chat-dock .steward-composer { flex-wrap: wrap; } }
+
+/* Hierarchy / scene / inspector share one selected task ID. */
+.shell { grid-template-columns: 260px minmax(0, 1fr) 370px; }
+.right-rail.node-inspector { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; padding: 0; border-left: 1px solid #d2d9df; background: #fff; }
+.node-inspector-head { flex-shrink: 0; padding: 14px; border-bottom: 1px solid #e1e7ec; }
+.node-inspector-head h2 { margin: 0; font-size: 14px; }
+.node-inspector-scroll { flex: 1; min-height: 0; overflow-y: scroll; scrollbar-gutter: stable; padding: 14px; }
+.node-basic-info { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px; font-size: 12px; }
+.node-basic-info dd { margin: 0; overflow-wrap: anywhere; }
+.node-log-tools { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+.node-log-tools button { padding: 5px 8px; font-size: 11px; }
+.node-log-tools button[aria-pressed=true] { background: #dcebf5; color: #173d56; }
+.node-log-tools label { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+.node-log-scroll { height: 310px; overflow-y: scroll; scrollbar-gutter: stable; border: 1px solid #d2d9df; border-radius: 8px; background: #f6f8fa; padding: 8px; }
+.node-log-scroll pre { margin: 5px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
+.node-log-entry { border-bottom: 1px solid #e0e7ed; padding: 8px 0; }
+.node-log-entry strong { font-size: 11px; color: #35637c; }
+.node-art-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.node-art-item { display: flex; flex-direction: column; gap: 5px; padding: 6px; border: 1px solid #d2d9df; border-radius: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.node-art-item img { width: 100%; height: 110px; object-fit: contain; background: #eef2f5; }
+.task-hierarchy input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.task-hierarchy .rc-tree { font-size: 12px; }
+.task-hierarchy .rc-tree-node-content-wrapper { min-width: 0; flex: 1; border-radius: 5px; }
+.task-hierarchy .rc-tree-node-selected { background: #d4e9fa !important; border: 1px solid #4896cf; }
+.task-hierarchy .rc-tree-treenode { display: flex; align-items: center; height: 30px; }
+.task-hierarchy-title { display: inline-flex; align-items: center; gap: 5px; max-width: 175px; }
+.task-hierarchy-title > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-hierarchy-title small { color: #687684; white-space: nowrap; font-size: 9px; }
+.task-hierarchy-status { flex-shrink: 0; width: 7px; height: 7px; background: #87949d; border-radius: 50%; }
+.task-hierarchy-status.done { background: #2f9561; }
+.task-hierarchy-status.blocked, .task-hierarchy-status.failed { background: #d05252; }
+.task-hierarchy-status.working, .task-hierarchy-status.running { background: #2d8cac; }
+.task-search-results { max-height: 140px; overflow: auto; }
+.task-search-results button { display: block; width: 100%; text-align: left; font-size: 12px; }
+.task-search-results button.selected { background: #d4e9fa; }
+@media (max-width: 1300px) { .shell { grid-template-columns: 220px minmax(0, 1fr) 320px; } }
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 180px minmax(0, 1fr); }
+  .right-rail.node-inspector { grid-column: 1 / -1; height: 500px; border-top: 1px solid #d2d9df; }
+  .shell { height: auto; min-height: 100vh; }
+  .center-workspace { height: 900px; }
+}
+
